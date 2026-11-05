@@ -18,6 +18,13 @@ public class DroneController : MonoBehaviour
     [Header("=== VERTICAL CONTROL ===")]
     public KeyCode upKey = KeyCode.Space;
     public KeyCode downKey = KeyCode.LeftShift;
+    public KeyCode downKeyAlt = KeyCode.RightShift;   // Shift kanan juga bisa untuk turun
+
+    [Header("=== YAW (PUTAR DI TEMPAT) ===")]
+    public KeyCode yawLeftKey = KeyCode.Q;
+    public KeyCode yawRightKey = KeyCode.E;
+    [Tooltip("Jika true, A/D tetap ikut memutar drone (perilaku lama). Matikan agar A/D murni geser kiri/kanan.")]
+    public bool yawFromStrafe = true;
 
     [Header("=== DRONE TILT EFFECTS ===")]
     public float maxTiltAngle = 15f;
@@ -86,7 +93,9 @@ public class DroneController : MonoBehaviour
         Debug.Log("  R = Arm/Disarm");
         Debug.Log("  WASD = Move");
         Debug.Log("  Space = Up");
-        Debug.Log("  Shift = Down");
+        Debug.Log("  Shift Kiri / Shift Kanan = Down");
+        Debug.Log("  Q = Putar Kiri (di tempat)");
+        Debug.Log("  E = Putar Kanan (di tempat)");
         Debug.Log("  Right Click (hold) = BOOST!");
     }
 
@@ -321,7 +330,7 @@ public class DroneController : MonoBehaviour
             // Update target altitude ke posisi baru
             targetAltitude = transform.position.y;
         }
-        else if (Input.GetKey(downKey))
+        else if (Input.GetKey(downKey) || Input.GetKey(downKeyAlt))
         {
             // TURUN - manual
             moveVertical = Vector3.down * verticalSpeed;
@@ -361,7 +370,19 @@ public class DroneController : MonoBehaviour
         rb.linearVelocity = velocity;
 
         // ========== ROTASI YAW (BELOK KIRI/KANAN) ==========
-        transform.Rotate(0, right * yawSpeed * Time.fixedDeltaTime, 0);
+        // Q/E = putar di tempat (tidak menggeser posisi, hanya mengubah arah hadap)
+        float yawInput = 0f;
+        if (Input.GetKey(yawLeftKey))  yawInput -= 1f;
+        if (Input.GetKey(yawRightKey)) yawInput += 1f;
+
+        // A/D (opsional) tetap ikut memutar seperti sebelumnya
+        if (yawFromStrafe)
+            yawInput += right;
+
+        yawInput = Mathf.Clamp(yawInput, -1f, 1f);
+
+        // Space.World agar putaran tetap rata terhadap sumbu Y dunia walau drone sedang miring
+        transform.Rotate(0f, yawInput * yawSpeed * Time.fixedDeltaTime, 0f, Space.World);
 
         // ========== EFEK TILT (MIRING) - HANYA VISUAL ==========
         // Drone miring tapi gerak tetap lurus horizontal!
