@@ -1,7 +1,8 @@
 using UnityEngine;
 
 // Overlay tombol ganti lintasan di atas layar Game.
-// Pasang di TrackArea (atau objek mana saja). Tombol keyboard 1/2/3 juga bisa dipakai.
+// Pasang di TrackArea (atau objek mana saja).
+// Ganti lintasan hanya lewat tombol di UI (tanpa hotkey keyboard).
 // Untuk demo / Heuristic. Untuk training, pilih lintasan lewat argumen -track N.
 public class TrackSelectorGUI : MonoBehaviour
 {
@@ -21,14 +22,6 @@ public class TrackSelectorGUI : MonoBehaviour
     {
         if (!showGUI || trackBuilder == null || trackBuilder.availableTracks == null) return;
 
-        // Hotkey 1/2/3 lewat event GUI (jalan di Input System baru maupun lama)
-        var e = Event.current;
-        if (e.type == EventType.KeyDown)
-        {
-            int n = e.keyCode - KeyCode.Alpha1;
-            if (n >= 0 && n < trackBuilder.availableTracks.Length) { Switch(n); e.Use(); }
-        }
-
         int count = trackBuilder.availableTracks.Length;
         float w = 90f, h = 32f, gap = 6f;
         float total = count * w + (count - 1) * gap;
@@ -43,7 +36,6 @@ public class TrackSelectorGUI : MonoBehaviour
         }
         GUI.backgroundColor = prev;
 
-        GUI.Label(new Rect(x, 10f + h + 2f, total, 20f), "Tekan 1 / 2 / 3 untuk ganti lintasan");
     }
 
     void Switch(int index)
