@@ -12,17 +12,20 @@ using UnityEngine;
 public class TrackVisualizer : MonoBehaviour
 {
     [Header("Jalan")]
-    public float roadWidth = 6f;
+    public float roadWidth = 12f;         // lebar sirkuit standar (F1: 12-15 m)
     public float sampleSpacing = 0.3f;     // jarak antar titik sampel di sepanjang jalan (m)
     public bool closedLoop = true;         // true: gerbang terakhir tersambung kembali ke Start
 
     [Header("Marka")]
-    public float edgeLineWidth = 0.2f;
-    public float edgeInset = 0.25f;        // jarak garis tepi dari pinggir jalan
-    public float centerLineWidth = 0.15f;
-    public float dashLength = 1.5f;
-    public float dashGap = 1.5f;
-    public float arrowSpacing = 10f;       // 0 = tanpa panah
+    public float edgeLineWidth = 0.3f;
+    public float edgeInset = 0.4f;         // jarak garis tepi dari pinggir jalan
+    public float centerLineWidth = 0.2f;
+    public float dashLength = 3f;
+    public float dashGap = 3f;
+    public float arrowSpacing = 14f;       // 0 = tanpa panah
+    public float arrowLength = 2.5f;
+    public float arrowWidth = 1.6f;
+    public float checkerCell = 1f;         // ukuran kotak garis start/finish (m)
 
     [Header("Gerbang")]
     public float gateOpening = 3f;         // samakan dengan TrackSceneSetup.Opening
@@ -35,6 +38,11 @@ public class TrackVisualizer : MonoBehaviour
     public Color lineColor = Color.white;
     public Color gateMarkColor = new Color(1f, 0.45f, 0.05f);
     public Color standColor = new Color(0.35f, 0.35f, 0.4f);
+
+    [Header("Tikungan rapat")]
+    [Tooltip("Aspal otomatis menyempit di tikungan yang radiusnya lebih kecil dari setengah lebar jalan, supaya sisi dalam tidak menekuk/tumpang tindih.")]
+    public bool narrowAtTightCorners = true;
+    public float minRoadWidth = 3f;        // batas penyempitan terkecil (m)
 
     [Header("Opsional")]
     public Material baseMaterial;          // kosong = pakai material dari prefab Gate
@@ -99,22 +107,25 @@ public class TrackVisualizer : MonoBehaviour
             tan.Add((pts[inx] - pts[ip]).normalized);
         }
 
+        // ---- 3b. Skala lebar per titik (hindari sisi dalam menekuk di tikungan rapat) ----
+        var wScale = ComputeWidthScale(pts, tan);
+
         // ---- 4. Mesh ----
         var road = new MeshBuilder();
         var lines = new MeshBuilder();
         var marks = new MeshBuilder();
 
-        Ribbon(road, pts, tan, 0f, roadWidth, RoadY, false);
+        Ribbon(road, pts, tan, wScale, 0f, roadWidth, RoadY, false, true);
 
         float edgeOff = roadWidth * 0.5f - edgeInset - edgeLineWidth * 0.5f;
-        Ribbon(lines, pts, tan, -edgeOff, edgeLineWidth, LineY, false);
-        Ribbon(lines, pts, tan, +edgeOff, edgeLineWidth, LineY, false);
-        Ribbon(lines, pts, tan, 0f, centerLineWidth, LineY, true);
+        Ribbon(lines, pts, tan, wScale, -edgeOff, edgeLineWidth, LineY, false, false);
+        Ribbon(lines, pts, tan, wScale, +edgeOff, edgeLineWidth, LineY, false, false);
+        Ribbon(lines, pts, tan, wScale, 0f, centerLineWidth, LineY, true, false);
 
-        if (arrowSpacing > 0.1f) Arrows(lines, pts, tan);
+        if (arrowSpacing > 0.1f) Arrows(lines, pts, tan, wScale);
 
         // Garis start/finish kotak-kotak di posisi Start
-        Checker(lines, pts[0], tan[0]);
+        Checker(lines, pts[0], tan[0], roadWidth * wScale[0]);
 
         // Strip oranye di bawah tiap gerbang
         foreach (var g in cfg.gates)
@@ -122,7 +133,7 @@ public class TrackVisualizer : MonoBehaviour
             float r = g.yaw * Mathf.Deg2Rad;
             Vector2 f = new Vector2(Mathf.Sin(r), Mathf.Cos(r));
             Vector2 c = new Vector2(g.position.x, g.position.z);
-            Strip(marks, c, f, roadWidth, 0.5f, MarkY);
+            Strip(marks, c, f, roadWidth * wScale[NearestIndex(pts, c)], 0.5f, MarkY);
         }
 
         MakeMeshObj("Road", road.ToMesh(), roadMat);
@@ -161,8 +172,10 @@ public class TrackVisualizer : MonoBehaviour
 
     // ------------------------------------------------------------------
     // Ribbon: pita sepanjang jalan pada offset lateral tertentu
-    void Ribbon(MeshBuilder mb, List<Vector2> pts, List<Vector2> tan,
-                float offset, float width, float y, bool dashed)
+    // scaleWidth = true : lebar pita ikut menyempit (aspal)
+    // scaleWidth = false: offset lateral yang diskalakan, lebar pita tetap (garis tepi)
+    void Ribbon(MeshBuilder mb, List<Vector2> pts, List<Vector2> tan, List<float> sc,
+                float offset, float width, float y, bool dashed, bool scaleWidth)
     {
         int m = pts.Count;
         int segs = closedLoop ? m : m - 1;
@@ -172,21 +185,23 @@ public class TrackVisualizer : MonoBehaviour
         {
             if (dashed && (i * sampleSpacing) % period >= dashLength) continue;
             int j = (i + 1) % m;
-            mb.Quad(At(pts[i], tan[i], offset - h, y), At(pts[i], tan[i], offset + h, y),
-                    At(pts[j], tan[j], offset - h, y), At(pts[j], tan[j], offset + h, y));
+            float hi = scaleWidth ? h * sc[i] : h, hj = scaleWidth ? h * sc[j] : h;
+            float oi = scaleWidth ? offset : offset * sc[i], oj = scaleWidth ? offset : offset * sc[j];
+            mb.Quad(At(pts[i], tan[i], oi - hi, y), At(pts[i], tan[i], oi + hi, y),
+                    At(pts[j], tan[j], oj - hj, y), At(pts[j], tan[j], oj + hj, y));
         }
     }
 
-    void Arrows(MeshBuilder mb, List<Vector2> pts, List<Vector2> tan)
+    void Arrows(MeshBuilder mb, List<Vector2> pts, List<Vector2> tan, List<float> sc)
     {
         int m = pts.Count;
         int step = Mathf.Max(1, Mathf.RoundToInt(arrowSpacing / sampleSpacing));
-        const float len = 1.4f, wid = 0.9f;
+        float len = arrowLength, wid = arrowWidth;
         for (int i = step / 2; i < m; i += step)
         {
             for (int sgn = -1; sgn <= 1; sgn += 2)
             {
-                float off = sgn * roadWidth * 0.25f;
+                float off = sgn * roadWidth * 0.25f * sc[i];
                 Vector2 c = pts[i];
                 Vector2 f = tan[i];
                 Vector2 r = new Vector2(f.y, -f.x);
@@ -200,14 +215,14 @@ public class TrackVisualizer : MonoBehaviour
     }
 
     // Garis start: dua baris kotak hitam-putih (putih digambar, hitam = aspal)
-    void Checker(MeshBuilder mb, Vector2 c, Vector2 f)
+    void Checker(MeshBuilder mb, Vector2 c, Vector2 f, float width)
     {
         Vector2 r = new Vector2(f.y, -f.x);
-        const float cell = 0.5f;
-        int cols = Mathf.Max(2, Mathf.RoundToInt(roadWidth / cell));
-        float cw = roadWidth / cols;
+        float cell = checkerCell;
+        int cols = Mathf.Max(2, Mathf.RoundToInt(width / cell));
+        float cw = width / cols;
         int rows = 2;
-        Vector2 origin = c - r * (roadWidth * 0.5f) - f * (rows * cell * 0.5f);
+        Vector2 origin = c - r * (width * 0.5f) - f * (rows * cell * 0.5f);
         for (int ro = 0; ro < rows; ro++)
             for (int co = 0; co < cols; co++)
             {
@@ -229,6 +244,68 @@ public class TrackVisualizer : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
+    // Hitung faktor skala lebar (0..1) per titik: di tikungan dengan radius R,
+    // setengah lebar jalan dibatasi <= 0.9 * R agar sisi dalam tidak melipat.
+    List<float> ComputeWidthScale(List<Vector2> pts, List<Vector2> tan)
+    {
+        int m = pts.Count;
+        var sc = new List<float>(m);
+        for (int i = 0; i < m; i++) sc.Add(1f);
+        if (!narrowAtTightCorners) return sc;
+
+        float half = roadWidth * 0.5f;
+        float minScale = Mathf.Clamp01(minRoadWidth / roadWidth);
+        const int span = 3;   // titik di kiri/kanan untuk mengukur kelengkungan (lebih halus)
+        for (int i = 0; i < m; i++)
+        {
+            int ip = closedLoop ? ((i - span) % m + m) % m : Mathf.Max(i - span, 0);
+            int inx = closedLoop ? (i + span) % m : Mathf.Min(i + span, m - 1);
+            float arc = (pts[inx] - pts[ip]).magnitude;
+            if (arc < 1e-4f) continue;
+            float ang = Mathf.Deg2Rad * Vector2.Angle(tan[ip], tan[inx]);
+            if (ang < 1e-4f) continue;
+            float radius = arc / ang;                     // ~ jari-jari lengkung lokal
+            sc[i] = Mathf.Clamp(0.9f * radius / half, minScale, 1f);
+        }
+
+        // Haluskan agar penyempitan landai (minimum dulu, lalu rata-rata)
+        int win = Mathf.Max(1, Mathf.RoundToInt(roadWidth / sampleSpacing));
+        var tmp = new float[m];
+        for (int i = 0; i < m; i++)
+        {
+            float mn = 1f;
+            for (int k = -win; k <= win; k++)
+            {
+                int idx = closedLoop ? ((i + k) % m + m) % m : Mathf.Clamp(i + k, 0, m - 1);
+                mn = Mathf.Min(mn, sc[idx]);
+            }
+            tmp[i] = mn;
+        }
+        int avg = Mathf.Max(1, win / 2);
+        for (int i = 0; i < m; i++)
+        {
+            float sum = 0f; int cnt = 0;
+            for (int k = -avg; k <= avg; k++)
+            {
+                int idx = closedLoop ? ((i + k) % m + m) % m : Mathf.Clamp(i + k, 0, m - 1);
+                sum += tmp[idx]; cnt++;
+            }
+            sc[i] = Mathf.Min(sum / cnt, 1f);
+        }
+        return sc;
+    }
+
+    static int NearestIndex(List<Vector2> pts, Vector2 p)
+    {
+        int best = 0; float bd = float.MaxValue;
+        for (int i = 0; i < pts.Count; i++)
+        {
+            float d = (pts[i] - p).sqrMagnitude;
+            if (d < bd) { bd = d; best = i; }
+        }
+        return best;
+    }
+
     static Vector3 V3(Vector2 p, float y) => new Vector3(p.x, y, p.y);
 
     // Titik pada jalan: pusat + lateral * "kanan" (kanan dari arah maju dilihat dari atas)
