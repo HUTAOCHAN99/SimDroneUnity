@@ -134,6 +134,9 @@ public static class TrackSceneSetup
         tb.startPoint = start.transform;
         tb.trackManager = tm;
 
+        // Jalan + marka
+        tb.visualizer = area.AddComponent<TrackVisualizer>();
+
         // Drone (opsional): pakai prefab bernama "Drone" jika ada
         var guid = AssetDatabase.FindAssets("Drone t:Prefab").FirstOrDefault();
         if (guid != null)

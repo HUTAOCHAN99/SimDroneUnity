@@ -10,6 +10,7 @@ public class TrackBuilder : MonoBehaviour
     public GameObject gatePrefab;
     public Transform startPoint;            // objek Start yang sudah ada
     public TrackManager trackManager;       // ASUMSI: punya field gates, startPoint, startRange, trackName
+    public TrackVisualizer visualizer;      // opsional: jalan + marka (kosong = cari di objek yang sama)
 
     readonly List<GameObject> spawned = new List<GameObject>();
 
@@ -47,6 +48,14 @@ public class TrackBuilder : MonoBehaviour
         trackManager.startPoint = startPoint;
         trackManager.startRange = cfg.startRange;
         trackManager.trackName = cfg.trackName;
+
+        // Bangun jalan + marka mengikuti titik Start dan gerbang
+        if (visualizer == null) visualizer = GetComponent<TrackVisualizer>();
+        if (visualizer != null)
+        {
+            var rend = gatePrefab != null ? gatePrefab.GetComponentInChildren<MeshRenderer>() : null;
+            visualizer.Build(cfg, rend != null ? rend.sharedMaterial : null);
+        }
     }
 
     // Dipanggil dari UI Dropdown (runtime, scene Evaluation).
