@@ -14,7 +14,12 @@ public class TrackBuilder : MonoBehaviour
 
     [Header("Skala lintasan")]
     [Tooltip("Pengali jarak antar gerbang di bidang X-Z. 1 = ukuran asli, 2 = dua kali lebih panjang. Ketinggian gerbang tidak berubah.")]
-    public float trackScale = 10f;
+    public float trackScale = 3f;
+
+    [Tooltip("Panjang total lintasan yang diinginkan (meter, Start -> semua gerbang -> kembali ke Start). Jika > 0, trackScale diabaikan dan skala dihitung otomatis. 0 = pakai trackScale.")]
+    public float targetLength = 0f;
+    [Tooltip("Panjang lintasan aktual setelah diskalakan (hanya info, jangan diisi).")]
+    public float currentLength;
 
     [Header("Ground otomatis (opsional)")]
     [Tooltip("Objek Ground (Plane bawaan 10 m). Kosong = dicari dengan nama 'Ground' di bawah objek ini.")]
@@ -39,18 +44,40 @@ public class TrackBuilder : MonoBehaviour
                 float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
                                System.Globalization.CultureInfo.InvariantCulture, out float s) && s > 0f)
                 trackScale = s;
+            // Panjang target lewat argumen: -trackLength 500
+            if (args[i] == "-trackLength" &&
+                float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out float L) && L > 0f)
+                targetLength = L;
         }
         BuildTrack(availableTracks[Mathf.Clamp(idx, 0, availableTracks.Length - 1)]);
     }
 
     // Posisi X dan Z dikali trackScale; Y (tinggi gerbang) tetap.
     // Yaw tidak perlu diubah karena skala X dan Z seragam tidak mengubah arah.
-    Vector3 ScaleXZ(Vector3 p) => new Vector3(p.x * trackScale, p.y, p.z * trackScale);
+    float activeScale = 5f;
+    Vector3 ScaleXZ(Vector3 p) => new Vector3(p.x * activeScale, p.y, p.z * activeScale);
+
+    // Panjang poligon tertutup Start -> Gate_0 .. Gate_N -> Start di bidang X-Z.
+    static float PathLength(TrackConfig c, bool closed = true)
+    {
+        var pts = new List<Vector2> { new Vector2(c.startPosition.x, c.startPosition.z) };
+        foreach (var g in c.gates) pts.Add(new Vector2(g.position.x, g.position.z));
+        float len = 0f;
+        for (int i = 0; i < pts.Count - 1; i++) len += Vector2.Distance(pts[i], pts[i + 1]);
+        if (closed) len += Vector2.Distance(pts[pts.Count - 1], pts[0]);
+        return len;
+    }
 
     // Membuat salinan TrackConfig yang sudah diskalakan. Asset asli tidak diubah.
     TrackConfig MakeScaled(TrackConfig src)
     {
         if (runtimeCfg != null) Destroy(runtimeCfg);
+
+        float baseLen = PathLength(src);
+        activeScale = (targetLength > 0f && baseLen > 0.01f) ? targetLength / baseLen : trackScale;
+        currentLength = baseLen * activeScale;
+
         runtimeCfg = Instantiate(src);
         runtimeCfg.startPosition = ScaleXZ(src.startPosition);
         runtimeCfg.gates = (GateData[])src.gates.Clone();
