@@ -2,40 +2,58 @@
     "DroneState": {
         "checkpoints": [
             {
-                "steps": 199991,
-                "file_path": "results\\diag01\\DroneState\\DroneState-199991.onnx",
-                "reward": -1.1208962010241104,
-                "creation_time": 1794153870.5467181,
+                "steps": 1599872,
+                "file_path": "results\\diag01\\DroneState\\DroneState-1599872.onnx",
+                "reward": -1.610196631688338,
+                "creation_time": 1794171215.836075,
                 "auxillary_file_paths": [
-                    "results\\diag01\\DroneState\\DroneState-199991.pt"
+                    "results\\diag01\\DroneState\\DroneState-1599872.pt"
                 ]
             },
             {
-                "steps": 399979,
-                "file_path": "results\\diag01\\DroneState\\DroneState-399979.onnx",
-                "reward": -2.4097139602122097,
-                "creation_time": 1794155538.4689503,
+                "steps": 1799976,
+                "file_path": "results\\diag01\\DroneState\\DroneState-1799976.onnx",
+                "reward": -1.458440800011158,
+                "creation_time": 1794172721.0877056,
                 "auxillary_file_paths": [
-                    "results\\diag01\\DroneState\\DroneState-399979.pt"
+                    "results\\diag01\\DroneState\\DroneState-1799976.pt"
                 ]
             },
             {
-                "steps": 412659,
-                "file_path": "results\\diag01\\DroneState\\DroneState-412659.onnx",
-                "reward": -3.0525521337985992,
-                "creation_time": 1794155757.9793918,
+                "steps": 1999875,
+                "file_path": "results\\diag01\\DroneState\\DroneState-1999875.onnx",
+                "reward": -1.440527155995369,
+                "creation_time": 1794174244.9414384,
                 "auxillary_file_paths": [
-                    "results\\diag01\\DroneState\\DroneState-412659.pt"
+                    "results\\diag01\\DroneState\\DroneState-1999875.pt"
+                ]
+            },
+            {
+                "steps": 2199926,
+                "file_path": "results\\diag01\\DroneState\\DroneState-2199926.onnx",
+                "reward": -1.3362103601296742,
+                "creation_time": 1794175765.3194342,
+                "auxillary_file_paths": [
+                    "results\\diag01\\DroneState\\DroneState-2199926.pt"
+                ]
+            },
+            {
+                "steps": 2303329,
+                "file_path": "results\\diag01\\DroneState\\DroneState-2303329.onnx",
+                "reward": -1.2993699957927067,
+                "creation_time": 1794176642.5352805,
+                "auxillary_file_paths": [
+                    "results\\diag01\\DroneState\\DroneState-2303329.pt"
                 ]
             }
         ],
         "final_checkpoint": {
-            "steps": 412659,
+            "steps": 2303329,
             "file_path": "results\\diag01\\DroneState.onnx",
-            "reward": -3.0525521337985992,
-            "creation_time": 1794155757.9793918,
+            "reward": -1.2993699957927067,
+            "creation_time": 1794176642.5352805,
             "auxillary_file_paths": [
-                "results\\diag01\\DroneState\\DroneState-412659.pt"
+                "results\\diag01\\DroneState\\DroneState-2303329.pt"
             ]
         }
     },

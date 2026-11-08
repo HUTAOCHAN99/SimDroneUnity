@@ -5,12 +5,12 @@
 // Behavior Parameters: Space Size = 27, Continuous Actions = 4.
 // Decision Period harus sama untuk kedua agen (2 -> 25 Hz bila Fixed Timestep 0.02).
 //
-// PERBAIKAN v3 (inner-loop rate controller): ruang aksi TETAP thrust kolektif + body rate (sesuai Bab II).
-//  - Body rate tidak lagi dipaksa instan (rb.angularVelocity = ...), melainkan dilacak oleh
-//    pengendali rate berbatas percepatan sudut (seperti flight controller drone sungguhan).
-//  - Aksi dihaluskan low-pass (actionTau) sebelum dipakai: meredam jerk dan meniru respons motor.
-//  - Redaman sudut, batas kecepatan sudut, terminasi 'flip' (tilt berlebih), penalti kecepatan sudut.
-//  Semua ini adalah bagian dari dinamika drone dan HARUS identik untuk agen state dan vision.
+// VERSI STABILIZER (aksi = perintah kecepatan, perilaku seperti DroneController tetapi lewat fisika Rigidbody).
+//  a[0] maju/mundur (searah hadap)   a[1] kanan/kiri   a[2] naik/turun   a[3] yaw rate. Aksi 0 = hover otomatis.
+//  Stabilizer: respons orde-1 menuju kecepatan target dengan batas percepatan (maxAccel) dan jeda (velocityTau).
+//  Gravitasi dimatikan (ketinggian ditahan stabilizer), pitch/roll dikunci, yaw bebas. Rigidbody tetap dipakai
+//  untuk tabrakan dan drag. Semua parameter dinamika HARUS identik untuk agen state dan vision.
+//  Versi thrust + body rate disimpan di DroneAgent_acro_backup.cs.txt (cadangan).
 //
 // Perubahan utama sebelumnya:
 //  - Gaya dorong dan body rate diterapkan di FixedUpdate (tiap 0,02 s), bukan hanya saat keputusan.
@@ -32,21 +32,13 @@ public class DroneAgent : Agent
     [Header("Referensi")]
     public TrackManager track;
 
-    [Header("Dinamika (HARUS identik untuk kedua agen)")]
-    public float maxThrustAccel = 16f;   // m/s^2, thrust kolektif maksimum (turun dari 25: aksi acak tidak lagi melempar drone)
-    public float maxSpeed = 25f;         // m/s, batas keras kecepatan (pengaman fisika, identik untuk kedua agen)
+    [Header("Dinamika / stabilizer (HARUS identik untuk kedua agen)")]
+    public float maxSpeed = 10f;          // m/s, kecepatan horizontal saat aksi = +-1 (controller: mode 2 = 10). Turunkan ke 6-8 bila sering menabrak gerbang
+    public float maxVerticalSpeed = 4f;   // m/s, naik/turun saat aksi = +-1
+    public float maxYawRate = 2f;         // rad/s (sekitar 115 derajat/detik)
+    public float maxAccel = 25f;          // m/s^2, batas percepatan stabilizer
+    public float velocityTau = 0.15f;     // s, jeda respons kecepatan (kecil = makin instan)
     public float linearDrag = 0.05f;
-
-    [Header("Inner-loop rate controller (bagian dari dinamika; identik untuk kedua agen)")]
-    public float maxRollPitchRate = 3f;   // rad/s saat aksi +-1 (naikkan bertahap setelah agen bisa melewati gerbang)
-    public float maxYawRate = 1.5f;       // rad/s saat aksi +-1
-    public float rateKp = 15f;            // 1/s; konstanta waktu pelacakan sekitar 1/Kp = 0,07 s
-    public float maxAngAccel = 40f;       // rad/s^2, batas percepatan sudut
-    public float angularDampingValue = 0.5f;
-    public float maxAngularVelocity = 8f; // rad/s, batas keras Rigidbody
-    public float actionTau = 0.08f;       // s, konstanta low-pass aksi (0 = nonaktif)
-    public float levelAssist = 2.5f;      // 1/s, penstabil sikap: drone kembali datar bila stick roll/pitch dilepas (0 = nonaktif)
-    public float maxTiltDeg = 75f;        // lewat ini episode berakhir dengan alasan "flip"
 
     [Header("Reward (nilai awal; ubah satu per satu dan catat)")]
     public float progressCoef = 0.2f;    // per meter kemajuan pada segmen gerbang (naik dari 0,05 supaya maju ke gerbang lebih menguntungkan daripada hover)
@@ -55,7 +47,6 @@ public class DroneAgent : Agent
     public float crashPenalty = 2.0f;
     public float smoothCoef = 0.002f;    // penalti perubahan aksi (per keputusan)
     public float timePenalty = 0.0002f;  // per FixedUpdate (turun: 60 s hover = -0,6, bukan -1,5)
-    public float angRatePenalty = 0.0002f; // per FixedUpdate, dikali |omega|^2 (rad/s)^2
 
     [Header("Episode")]
     public int contactIgnoreSteps = 3;   // abaikan kontak/trigger setelah reset (FixedUpdate)
@@ -75,7 +66,6 @@ public class DroneAgent : Agent
     public float minVolume = 0.3f, maxVolume = 0.9f;
     public float audioSpoolSpeed = 4f;
     public float audioMaxTimeScale = 3f;     // di atas ini (saat training cepat) suara dimatikan
-    public float speedRef = 15f;             // m/s yang dianggap "penuh" untuk pitch suara
 
     [Header("Logging evaluasi")]
     public bool logEpisodeCsv = false;
@@ -84,18 +74,9 @@ public class DroneAgent : Agent
 
     Rigidbody rb;
     System.Random rng;
-    readonly float[] u = new float[4];    // aksi mentah dari policy (-1..1)
-    readonly float[] us = new float[4];   // aksi setelah low-pass, dipakai di FixedUpdate
-    // PERUBAHAN: aksi thrust 0 = hover. Kebijakan awal PPO berpusat di aksi 0, jadi drone mulai
-    // dari hover dan bukan dari thrust 12,5 m/s^2 yang membuatnya naik menembus langit-langit.
-    // Pemetaan piecewise: -1 -> 0, 0 -> 9,81 (hover), +1 -> maxThrustAccel. Rentang fisika tetap sama.
-    const float HoverAccel = 9.81f;
-    float HoverU => 0f;
-    float ThrustFromU(float a) =>
-        a >= 0f ? HoverAccel + a * (maxThrustAccel - HoverAccel) : HoverAccel * (1f + a);
+    readonly float[] u = new float[4];    // aksi dari policy (-1..1)
 
     bool episodeActive;
-    float lastThrust = 9.81f;
     bool audioStarted;
     int ignoreSteps;
     float episodeStartTime, marginSum, prevS;
@@ -131,15 +112,15 @@ public class DroneAgent : Agent
         if (startupAudio == null && dc != null) startupAudio = dc.startupAudio;
         if (flyAudio != null) { flyAudio.loop = true; flyAudio.playOnAwake = false; }
         if (startupAudio != null) startupAudio.playOnAwake = false;
-        rb.useGravity = true;
+        rb.useGravity = false;               // stabilizer menahan ketinggian
+        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;  // hanya yaw
         rb.isKinematic = false;
-        rb.maxAngularVelocity = maxAngularVelocity;
 #if UNITY_6000_0_OR_NEWER
         rb.linearDamping = linearDrag;
-        rb.angularDamping = angularDampingValue;
+        rb.angularDamping = 0f;
 #else
         rb.drag = linearDrag;
-        rb.angularDrag = angularDampingValue;
+        rb.angularDrag = 0f;
 #endif
         if (track == null) track = GetComponentInParent<TrackManager>();
         // seed bisa dikirim dari Python lewat EnvironmentParameters ("seed")
@@ -154,15 +135,14 @@ public class DroneAgent : Agent
         track.ResetTrack();
         Vector3 jitter = new Vector3(Rnd(), Rnd(), Rnd()) * track.startRange;
         Vector3 pos = track.startPoint.position + jitter;
-        Quaternion rot = track.startPoint.rotation;
+        Quaternion rot = Quaternion.Euler(0f, track.startPoint.rotation.eulerAngles.y, 0f);   // hanya yaw
         Vel = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         rb.position = pos; rb.rotation = rot;
         transform.SetPositionAndRotation(pos, rot);
         Physics.SyncTransforms();
 
-        u[0] = HoverU; u[1] = u[2] = u[3] = 0f;
-        for (int i = 0; i < 4; i++) us[i] = u[i];
+        u[0] = u[1] = u[2] = u[3] = 0f;      // aksi nol = hover
         gatesPassed = 0; marginSum = 0f;
         jerkSqSum = 0; jerkCount = 0; hasPrevVel = false; hasPrevAcc = false;
         episodeStartTime = Time.fixedTime;
@@ -213,36 +193,16 @@ public class DroneAgent : Agent
         if (!episodeActive || rb == null || track == null || track.GateCount == 0) return;
         if (ignoreSteps > 0) ignoreSteps--;
 
-        float dt = Time.fixedDeltaTime;
+        // Aksi: [maju, kanan, naik, yaw rate] -> kecepatan target (frame yaw drone; vertikal = dunia)
+        Vector3 horiz = transform.forward * u[0] + transform.right * u[1];
+        horiz.y = 0f;
+        horiz = Vector3.ClampMagnitude(horiz, 1f) * maxSpeed;
+        Vector3 vCmd = horiz + Vector3.up * (u[2] * maxVerticalSpeed);
 
-        // 1) Low-pass aksi (meniru respons motor, menekan jerk)
-        float alpha = actionTau > 1e-4f ? 1f - Mathf.Exp(-dt / actionTau) : 1f;
-        for (int i = 0; i < 4; i++) us[i] = Mathf.Lerp(us[i], u[i], alpha);
-
-        // 2) Thrust kolektif (aksi 0 = hover)
-        float thrust = ThrustFromU(us[0]);                             // 0..maxThrustAccel
-        rb.AddRelativeForce(Vector3.up * thrust, ForceMode.Acceleration);
-
-        // 3) Inner-loop rate controller: lacak target body rate dengan percepatan sudut berbatas
-        Vector3 target = new Vector3(us[1] * maxRollPitchRate, us[2] * maxYawRate, us[3] * maxRollPitchRate);
-
-        // Penstabil sikap (self-leveling): saat stick roll/pitch kecil, tambahkan target rate yang menegakkan drone.
-        // Aksi tetap thrust + body rate; stick penuh mengalahkan penstabil.
-        if (levelAssist > 0f)
-        {
-            Vector3 levelBody = transform.InverseTransformDirection(Vector3.Cross(transform.up, Vector3.up));
-            float authority = 1f - Mathf.Clamp01(Mathf.Max(Mathf.Abs(us[1]), Mathf.Abs(us[3])));
-            target.x += authority * levelAssist * levelBody.x;
-            target.z += authority * levelAssist * levelBody.z;
-        }
-
-        Vector3 w = transform.InverseTransformDirection(rb.angularVelocity);
-        Vector3 angAcc = Vector3.ClampMagnitude(rateKp * (target - w), maxAngAccel);
-        rb.AddRelativeTorque(angAcc, ForceMode.Acceleration);
-        AddReward(-angRatePenalty * w.sqrMagnitude);
-
-        if (Vel.magnitude > maxSpeed) Vel = Vel.normalized * maxSpeed;   // batas keras kecepatan
-        lastThrust = thrust;   // dipakai Update() untuk visual dan suara
+        // Stabilizer: respons orde-1 menuju kecepatan target, percepatan dibatasi
+        Vector3 acc = Vector3.ClampMagnitude((vCmd - Vel) / Mathf.Max(0.01f, velocityTau), maxAccel);
+        rb.AddForce(acc, ForceMode.Acceleration);
+        rb.angularVelocity = new Vector3(0f, u[3] * maxYawRate, 0f);
 
         // Reward kemajuan (Persamaan 2.2) dan penalti waktu
         float s = Progress();
@@ -251,14 +211,6 @@ public class DroneAgent : Agent
         AddReward(-timePenalty);
 
         UpdateJerk();
-
-        // Terminasi flip: kemiringan berlebih (episode tidak dibiarkan berlanjut dalam keadaan terbalik)
-        if (Vector3.Angle(transform.up, Vector3.up) > maxTiltDeg)
-        {
-            AddReward(-crashPenalty);
-            Finish(false, "flip");
-            return;
-        }
 
         Vector3 local = track.transform.InverseTransformPoint(transform.position);
         bool tooHigh = local.y > track.ArenaCeiling;
@@ -273,9 +225,9 @@ public class DroneAgent : Agent
     void Update()
     {
         if (rb == null) return;
-        float load = Mathf.Clamp01(lastThrust / maxThrustAccel);               // 0..1 dari thrust
-        float speedF = Mathf.Clamp01(Vel.magnitude / Mathf.Max(0.1f, speedRef));
-        float intensity = Mathf.Clamp01(0.6f * load + 0.4f * speedF);
+        // Intensitas: idle saat hover, naik sesuai laju gerak (seperti spool di DroneController)
+        float speedF = Mathf.Clamp01(Vel.magnitude / Mathf.Max(0.1f, maxSpeed));
+        float intensity = Mathf.Clamp01(0.35f + 0.65f * speedF);
 
         // Baling-baling: spool halus ke target (tetap berputar walau episode sedang reset)
         float targetProp = Mathf.Lerp(propMinSpeed, propMaxSpeed, intensity);
@@ -412,19 +364,18 @@ public class DroneAgent : Agent
         }
     }
 
-    // Uji manual. Hover: u0 = 0. Butuh Active Input Handling = Both/Legacy.
-    // Catatan: aksi adalah TARGET kecepatan sudut, jadi menahan W tetap memutar drone terus-menerus (mode akrobatik).
-    // Ini normal; tujuan uji Heuristic hanya memeriksa hover, respons, dan batas tilt.
+    // Uji manual. Aksi nol = hover. Butuh Active Input Handling = Both/Legacy.
+    // W/S maju-mundur, A/D geser kanan-kiri, Space/Shift naik-turun, Q/E putar. Setengah kecepatan penuh.
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var a = actionsOut.ContinuousActions;
-        a[0] = HoverU; a[1] = 0f; a[2] = 0f; a[3] = 0f;
+        a[0] = 0f; a[1] = 0f; a[2] = 0f; a[3] = 0f;
 #if ENABLE_LEGACY_INPUT_MANAGER
-        if (Input.GetKey(KeyCode.Space)) a[0] += 0.4f;
-        if (Input.GetKey(KeyCode.LeftShift)) a[0] -= 0.4f;
-        a[1] = Input.GetAxis("Vertical") * 0.3f;      // pitch
-        a[3] = -Input.GetAxis("Horizontal") * 0.3f;   // roll
-        a[2] = ((Input.GetKey(KeyCode.E) ? 1f : 0f) - (Input.GetKey(KeyCode.Q) ? 1f : 0f)) * 0.5f; // yaw
+        a[0] = Input.GetAxis("Vertical") * 0.5f;
+        a[1] = Input.GetAxis("Horizontal") * 0.5f;
+        if (Input.GetKey(KeyCode.Space)) a[2] += 0.5f;
+        if (Input.GetKey(KeyCode.LeftShift)) a[2] -= 0.5f;
+        a[3] = ((Input.GetKey(KeyCode.E) ? 1f : 0f) - (Input.GetKey(KeyCode.Q) ? 1f : 0f)) * 0.5f;
 #endif
     }
 }
