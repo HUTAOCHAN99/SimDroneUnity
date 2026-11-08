@@ -55,7 +55,13 @@ public class DroneAgent : Agent
     Rigidbody rb;
     System.Random rng;
     readonly float[] u = new float[4];
-    float HoverU => 2f * 9.81f / maxThrustAccel - 1f;       // ~ -0,215 bila maxThrustAccel = 25
+    // PERUBAHAN: aksi thrust 0 = hover. Kebijakan awal PPO berpusat di aksi 0, jadi drone mulai
+    // dari hover dan bukan dari thrust 12,5 m/s^2 yang membuatnya naik menembus langit-langit.
+    // Pemetaan piecewise: -1 -> 0, 0 -> 9,81 (hover), +1 -> maxThrustAccel. Rentang fisika tetap sama.
+    const float HoverAccel = 9.81f;
+    float HoverU => 0f;
+    float ThrustFromU(float a) =>
+        a >= 0f ? HoverAccel + a * (maxThrustAccel - HoverAccel) : HoverAccel * (1f + a);
 
     bool episodeActive;
     int ignoreSteps;
@@ -166,13 +172,13 @@ public class DroneAgent : Agent
         if (ignoreSteps > 0) ignoreSteps--;
 
         // Aksi: [thrust kolektif, body rate x, y, z]
-        float thrust = (u[0] + 1f) * 0.5f * maxThrustAccel;            // 0..maxThrustAccel
+        float thrust = ThrustFromU(u[0]);                              // 0..maxThrustAccel, aksi 0 = hover
         Vector3 rates = new Vector3(u[1], u[2], u[3]) * maxBodyRate;
         rb.AddRelativeForce(Vector3.up * thrust, ForceMode.Acceleration);
         rb.angularVelocity = transform.TransformDirection(rates);      // pengendali body-rate ideal
 
         // Visual: kecepatan baling-baling mengikuti thrust (tidak mempengaruhi fisika)
-        float tNorm = (u[0] + 1f) * 0.5f;
+        float tNorm = Mathf.Clamp01(thrust / maxThrustAccel);
         if (propellers != null)
             foreach (var p in propellers)
                 if (p != null) p.currentSpeed = Mathf.Lerp(propMinSpeed, propMaxSpeed, tNorm);
@@ -186,10 +192,11 @@ public class DroneAgent : Agent
         UpdateJerk();
 
         Vector3 local = track.transform.InverseTransformPoint(transform.position);
-        if (new Vector2(local.x, local.z).magnitude > track.ArenaRadius || local.y > track.ArenaCeiling)
+        bool tooHigh = local.y > track.ArenaCeiling;
+        if (tooHigh || new Vector2(local.x, local.z).magnitude > track.ArenaRadius)
         {
             AddReward(-crashPenalty);
-            Finish(false, "out_of_bounds");
+            Finish(false, tooHigh ? "ceiling" : "radius");   // dipisah supaya CSV menunjukkan arah keluarnya
         }
     }
 
@@ -258,7 +265,7 @@ public class DroneAgent : Agent
     {
         if (!episodeActive || ignoreSteps > 0) return;
         AddReward(-crashPenalty);
-        Finish(false, "collision");
+        Finish(false, c.gameObject.name == "Ground" ? "collision_ground" : "collision_object");
     }
 
     void Finish(bool success, string reason)
@@ -296,7 +303,7 @@ public class DroneAgent : Agent
         }
     }
 
-    // Uji manual. Hover: u0 = -0,215. Butuh Active Input Handling = Both/Legacy.
+    // Uji manual. Hover: u0 = 0. Butuh Active Input Handling = Both/Legacy.
     // Catatan: aksi adalah KECEPATAN SUDUT, jadi menahan W memutar drone terus-menerus.
     public override void Heuristic(in ActionBuffers actionsOut)
     {

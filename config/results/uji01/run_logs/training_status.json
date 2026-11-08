@@ -1,0 +1,47 @@
+{
+    "DroneState": {
+        "checkpoints": [
+            {
+                "steps": 199981,
+                "file_path": "results\\uji01\\DroneState\\DroneState-199981.onnx",
+                "reward": -2.021843808107689,
+                "creation_time": 1794144948.6209922,
+                "auxillary_file_paths": [
+                    "results\\uji01\\DroneState\\DroneState-199981.pt"
+                ]
+            },
+            {
+                "steps": 399912,
+                "file_path": "results\\uji01\\DroneState\\DroneState-399912.onnx",
+                "reward": -2.7623958196491003,
+                "creation_time": 1794146960.7925544,
+                "auxillary_file_paths": [
+                    "results\\uji01\\DroneState\\DroneState-399912.pt"
+                ]
+            },
+            {
+                "steps": 424132,
+                "file_path": "results\\uji01\\DroneState\\DroneState-424132.onnx",
+                "reward": -3.482243740413752,
+                "creation_time": 1794147229.6074889,
+                "auxillary_file_paths": [
+                    "results\\uji01\\DroneState\\DroneState-424132.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 424132,
+            "file_path": "results\\uji01\\DroneState.onnx",
+            "reward": -3.482243740413752,
+            "creation_time": 1794147229.6074889,
+            "auxillary_file_paths": [
+                "results\\uji01\\DroneState\\DroneState-424132.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}
