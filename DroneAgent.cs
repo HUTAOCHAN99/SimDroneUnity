@@ -42,6 +42,11 @@ public class DroneAgent : Agent
     public int contactIgnoreSteps = 3;   // abaikan kontak/trigger setelah reset (FixedUpdate)
     public int seedOffset = 0;           // bedakan antar agen paralel
 
+    [Header("Visual (kosmetik, tidak mempengaruhi fisika)")]
+    public PropellerSpin[] propellers;
+    public float propMinSpeed = 1500f;
+    public float propMaxSpeed = 5000f;
+
     [Header("Logging evaluasi")]
     public bool logEpisodeCsv = false;
     public string agentTag = "state";    // "state" atau "vision"
@@ -78,6 +83,8 @@ public class DroneAgent : Agent
     public override void Initialize()
     {
         rb = GetComponent<Rigidbody>();
+        if (propellers == null || propellers.Length == 0)
+            propellers = GetComponentsInChildren<PropellerSpin>();
         rb.useGravity = true;
         rb.isKinematic = false;
 #if UNITY_6000_0_OR_NEWER
@@ -163,6 +170,12 @@ public class DroneAgent : Agent
         Vector3 rates = new Vector3(u[1], u[2], u[3]) * maxBodyRate;
         rb.AddRelativeForce(Vector3.up * thrust, ForceMode.Acceleration);
         rb.angularVelocity = transform.TransformDirection(rates);      // pengendali body-rate ideal
+
+        // Visual: kecepatan baling-baling mengikuti thrust (tidak mempengaruhi fisika)
+        float tNorm = (u[0] + 1f) * 0.5f;
+        if (propellers != null)
+            foreach (var p in propellers)
+                if (p != null) p.currentSpeed = Mathf.Lerp(propMinSpeed, propMaxSpeed, tNorm);
 
         // Reward kemajuan (Persamaan 2.2) dan penalti waktu
         float s = Progress();
