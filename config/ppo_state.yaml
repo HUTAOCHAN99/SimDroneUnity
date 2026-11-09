@@ -11,7 +11,7 @@ behaviors:
       batch_size: 2048
       buffer_size: 20480
       learning_rate: 3.0e-4
-      beta: 5.0e-3
+      beta: 1.0e-3            # DIUBAH dari 5.0e-3: entropy/std tidak turun di diag01, diag04, diag05
       epsilon: 0.2            # clipping PPO (nilai awal sesuai Schulman et al., 2017)
       lambd: 0.95
       num_epoch: 3
@@ -24,10 +24,10 @@ behaviors:
       extrinsic:
         gamma: 0.99
         strength: 1.0
-    max_steps: 3.0e6
+    max_steps: 300000       # DIUBAH untuk run diagnosis (run resmi: 3.0e6)
     time_horizon: 128
     summary_freq: 20000
-    checkpoint_interval: 200000
+    checkpoint_interval: 100000   # DIUBAH untuk run diagnosis (run resmi: 200000)
     keep_checkpoints: 5
 
 torch_settings:

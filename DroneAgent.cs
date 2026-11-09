@@ -48,6 +48,11 @@ public class DroneAgent : Agent
     public float smoothCoef = 0.002f;    // penalti perubahan aksi (per keputusan)
     public float timePenalty = 0.0002f;  // per FixedUpdate (turun: 60 s hover = -0,6, bukan -1,5)
 
+    [Header("Terminasi stall (episode berhenti bila tidak ada kemajuan ke gerbang)")]
+    public float stallSeconds = 6f;        // detik tanpa kemajuan baru; 0 = nonaktif
+    public float stallMinProgress = 0.5f;  // meter kemajuan baru (di atas yang terbaik pada segmen ini) yang dianggap maju
+    public float stallPenalty = 1.0f;      // lebih ringan dari crashPenalty (2,0), tetapi lebih buruk dari hover biasa
+
     [Header("Episode")]
     public int contactIgnoreSteps = 3;   // abaikan kontak/trigger setelah reset (FixedUpdate)
     public int seedOffset = 0;           // bedakan antar agen paralel
@@ -80,6 +85,7 @@ public class DroneAgent : Agent
     bool audioStarted;
     int ignoreSteps;
     float episodeStartTime, marginSum, prevS;
+    float bestS, stallTimer;
     int gatesPassed, episodeCount;
     bool pendingLog;
 
@@ -147,6 +153,7 @@ public class DroneAgent : Agent
         jerkSqSum = 0; jerkCount = 0; hasPrevVel = false; hasPrevAcc = false;
         episodeStartTime = Time.fixedTime;
         prevS = Progress();
+        bestS = prevS; stallTimer = 0f;
         ignoreSteps = contactIgnoreSteps;
         episodeCount++;
         pendingLog = true;
@@ -211,6 +218,22 @@ public class DroneAgent : Agent
         AddReward(-timePenalty);
 
         UpdateJerk();
+
+        // Terminasi stall: hover, melayang, atau berputar-putar tanpa maju ke gerbang berikutnya
+        if (stallSeconds > 0f && ignoreSteps <= 0)
+        {
+            if (s > bestS + stallMinProgress) { bestS = s; stallTimer = 0f; }
+            else
+            {
+                stallTimer += Time.fixedDeltaTime;
+                if (stallTimer >= stallSeconds)
+                {
+                    AddReward(-stallPenalty);
+                    Finish(false, "stall");     // alasan baru di CSV
+                    return;
+                }
+            }
+        }
 
         Vector3 local = track.transform.InverseTransformPoint(transform.position);
         bool tooHigh = local.y > track.ArenaCeiling;
@@ -319,6 +342,7 @@ public class DroneAgent : Agent
         else
         {
             prevS = Progress();   // segmen baru
+            bestS = prevS; stallTimer = 0f;
         }
     }
 
