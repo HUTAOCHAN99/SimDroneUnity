@@ -1,6 +1,6 @@
-# ppo_state.yaml -- v6 (setelah diag15)
-# diag16: mlagents-learn config\ppo_state.yaml --run-id=diag16 --seed=1 --initialize-from=diag13 --env-args -track 1
-# (hapus --env-args bila training di Editor). Pindahkan episode_metrics.csv lama dulu.
+# ppo_state.yaml -- v8 (setelah diag17: success 100%)
+# diag18 (multi-lap): mlagents-learn config\ppo_state.yaml --run-id=diag18 --seed=1 --initialize-from=diag17 --env-args -track 1
+# (hapus --env-args bila training di Editor). Pindahkan episode_metrics.csv lama dulu (kolom bertambah: laps).
 # Behavior Name di Behavior Parameters HARUS "DroneState".
 # Ganti nama episode_metrics.csv lama sebelum run (kolom CSV bertambah).
 
@@ -26,7 +26,7 @@ behaviors:
       extrinsic:
         gamma: 0.995                     # DIUBAH dari 0.99: gerbang 0 sekitar 4-5 detik (100+ keputusan) di depan
         strength: 1.0
-    max_steps: 2000000                   # diag15; perpanjang bila GatesPassed masih naik
+    max_steps: 1500000                   # diag17; perpanjang bila GatesPassed masih naik
     time_horizon: 256                    # DIUBAH dari 128
     summary_freq: 20000
     checkpoint_interval: 100000
@@ -35,30 +35,17 @@ behaviors:
 torch_settings:
   device: cpu
 
-# Parameter lingkungan (dibaca DroneAgent v12 tiap episode; menimpa Inspector).
-# KURIKULUM TERBALIK: spawn dekat gerbang 2..4 dulu (lolos hampir pasti -> PPO melihat reward 'lolos'), lalu menjauh sesuai progress training.
+# Parameter lingkungan (dibaca DroneAgent v14 tiap episode; menimpa Inspector).
+# diag18: drone terus berputar (3 putaran per episode); start acak dipertahankan agar tidak lupa gerbang tengah.
 environment_parameters:
+  laps_per_episode: 3
   stall_penalty: 4.0
   dwell_coef: 0.004
   dwell_grace: 1.0
-  random_start_prob: 0.5
-  random_start_min_gate: 2     # fokus gerbang yang macet (gerbang 1 sudah bisa dari start normal)
-  random_start_max_gate: 4
-  random_start_min_speed: 1.5  # m/s menuju gerbang: tidak diam saat spawn
-  random_start_max_speed: 3.0
-  random_start_dist:           # jarak maks di depan gerbang saat spawn (m); dinaikkan berdasar progress max_steps
-    curriculum:
-      - name: Dekat
-        completion_criteria: {measure: progress, behavior: DroneState, signal_smoothing: false, min_lesson_length: 1, threshold: 0.15}
-        value: 1.5
-      - name: Sedang
-        completion_criteria: {measure: progress, behavior: DroneState, signal_smoothing: false, min_lesson_length: 1, threshold: 0.30}
-        value: 2.5
-      - name: Jauh
-        completion_criteria: {measure: progress, behavior: DroneState, signal_smoothing: false, min_lesson_length: 1, threshold: 0.45}
-        value: 4.0
-      - name: SangatJauh
-        completion_criteria: {measure: progress, behavior: DroneState, signal_smoothing: false, min_lesson_length: 1, threshold: 0.60}
-        value: 6.0
-      - name: Penuh
-        value: 9.0
+  random_start_prob: 0.3
+  random_start_min_gate: 1
+  random_start_max_gate: 6
+  random_start_min_speed: 4.0
+  random_start_max_speed: 20.0   # kecepatan nyata sekitar 24 m/s saat tiba di gerbang (end_speed diag17)
+  random_start_dist: 9.0
+  random_start_exit_prob: 0.6

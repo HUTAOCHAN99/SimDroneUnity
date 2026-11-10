@@ -12,6 +12,16 @@
 //  untuk tabrakan dan drag. Semua parameter dinamika HARUS identik untuk agen state dan vision.
 //  Versi thrust + body rate disimpan di DroneAgent_acro_backup.cs.txt (cadangan).
 //
+// Perubahan v14 (setelah diag17): diag17 sukses 100% (1000/1000 lap_complete, 9,3 s). Episode berakhir saat putaran selesai, lalu drone
+//   di-reset ke Start. MODE MULTI-LAP: setelah gerbang terakhir, target kembali ke gerbang 0 dan drone terus terbang; episode hanya berakhir
+//   karena tabrakan/stall/missed_gate/keluar arena, atau setelah laps_per_episode putaran (training). Tanpa Python (inference/demo) putaran
+//   tak terbatas. Set Max Step di Agent = 0 (atau besar) supaya tidak 'timeout'.
+//   YAML: laps_per_episode (default 1 = perilaku lama). CSV: kolom baru laps di akhir.
+// Perubahan v13 (setelah diag16): diag16 lolos 6 dari 7 gerbang (89% episode start normal sampai gerbang terakhir) tetapi gagal di gerbang
+//   terakhir: missed_gate dengan kecepatan ~23 m/s dan melenceng ~7 m ke samping, karena segmen 5->6 hanya terlihat dari start normal
+//   (random_start_max_gate sebelumnya 4). Perbaikan: random_start_exit_prob = peluang spawn bergaya 'baru keluar dari gerbang sebelumnya'
+//   (menghadap dan melaju searah sumbu gerbang sebelumnya, BUKAN langsung menghadap gerbang k), sehingga belokan ke gerbang berikutnya
+//   dilatih dengan kondisi awal yang sama seperti penerbangan nyata.
 // Perubahan v12 (setelah diag15): diag15 membuktikan penalti saja tidak cukup: 3.087/3.087 episode start normal tetap stall ~3 m di depan
 //   gerbang indeks 2 (tidak ada satu pun lolos), jadi PPO tidak pernah melihat sampel 'lolos' di sana. Solusi: kurikulum terbalik.
 //   Parameter YAML baru: random_start_dist (jarak maks di depan gerbang k; >0 = spawn di garis segmen dekat gerbang, sehingga lolos
@@ -153,6 +163,7 @@ public class DroneAgent : Agent
     float episodeStartTime, marginSum, prevS;
     float bestS, stallTimer;
     int gatesPassed, episodeCount, rejectedPass;
+    int targetLaps = 1, lapsCompleted;                       // mode multi-lap
     float effStallPenalty, effDwellCoef, effDwellGrace;   // nilai efektif (YAML environment_parameters menimpa Inspector)
     int startGate;                       // indeks gerbang target saat episode dimulai (0 = start normal)
     bool pendingLog, loggedGeometry;
@@ -212,6 +223,9 @@ public class DroneAgent : Agent
         track.ResetTrack();
         startGate = 0;
         var ep = Academy.Instance.EnvironmentParameters;
+        lapsCompleted = 0;
+        // training: laps_per_episode putaran per episode; demo/inference (tanpa Python): tanpa batas sampai menabrak/stall
+        targetLaps = Academy.Instance.IsCommunicatorOn ? Mathf.Max(1, Mathf.RoundToInt(ep.GetWithDefault("laps_per_episode", 1f))) : int.MaxValue;
         effStallPenalty = ep.GetWithDefault("stall_penalty", stallPenalty);
         effDwellCoef = ep.GetWithDefault("dwell_coef", dwellCoef);
         effDwellGrace = ep.GetWithDefault("dwell_grace", dwellGrace);
@@ -256,8 +270,19 @@ public class DroneAgent : Agent
             if (along > -minBehind) pos -= gk.forward * (along + minBehind);
             Vector3 toGate = gk.position - pos; toGate.y = 0f;
             float yaw = Mathf.Atan2(toGate.x, toGate.z) * Mathf.Rad2Deg + Rnd() * randomStartYawJitter;
+            float spd = Mathf.Lerp(rsMinSpeed, rsSpeed, (float)rng.NextDouble());
+            if (rng.NextDouble() < ep.GetWithDefault("random_start_exit_prob", 0f))
+            {
+                // gaya 'baru keluar gerbang k-1': posisi tepat di luar gerbang sebelumnya, menghadap & melaju searah sumbunya
+                Transform gp = track.gates[k - 1];
+                Vector3 pf = gp.forward; pf.y = 0f; pf.Normalize();
+                Vector3 pside = new Vector3(pf.z, 0f, -pf.x);
+                pos = gp.position + pf * (aimBeyond + (float)rng.NextDouble() * 1.5f) + pside * (Rnd() * randomStartLateral);
+                pos.y = gp.position.y + Rnd() * 0.3f;
+                yaw = Mathf.Atan2(pf.x, pf.z) * Mathf.Rad2Deg + Rnd() * randomStartYawJitter;
+            }
             rot = Quaternion.Euler(0f, yaw, 0f);
-            startVel = rot * Vector3.forward * (Mathf.Lerp(rsMinSpeed, rsSpeed, (float)rng.NextDouble()));
+            startVel = rot * Vector3.forward * spd;
         }
         else
         {
@@ -513,7 +538,7 @@ public class DroneAgent : Agent
     {
         Transform sg = track.SegmentStart;
         Transform ng = track.NextGate;
-        Vector3 g1 = track.NextIndex > 0 ? Aim(sg) : sg.position;
+        Vector3 g1 = (track.NextIndex > 0 || track.LapsDone > 0) ? Aim(sg) : sg.position;
         Vector3 g2 = Aim(ng);
         float L = WDist(g2 - g1, ng);
         if (L < 1e-3f) return 0f;
@@ -561,6 +586,8 @@ public class DroneAgent : Agent
     public void OnGateTriggered(int index, Transform gate, Vector2 halfOpening)
     {
         if (!episodeActive || ignoreSteps > 0) return;
+        int prevIdx = track.NextIndex > 0 ? track.NextIndex - 1 : (track.LapsDone > 0 ? track.GateCount - 1 : -1);
+        if (index == prevIdx) return;                               // gerbang yang baru dilewati (termasuk gerbang terakhir setelah wrap)
         if (index < track.NextIndex) return;                        // gerbang lama / sentuhan ganda
         if (index > track.NextIndex)                                // melewatkan gerbang
         {
@@ -619,7 +646,14 @@ public class DroneAgent : Agent
         if (track.NextIndex >= track.GateCount)
         {
             AddReward(lapBonus);
-            Finish(true, "lap_complete");
+            lapsCompleted++;
+            if (lapsCompleted >= targetLaps) Finish(true, "lap_complete");
+            else
+            {
+                track.WrapLap();                          // lanjut putaran berikutnya tanpa reset
+                prevS = Progress();
+                bestS = prevS; stallTimer = 0f;
+            }
         }
         else
         {
@@ -660,6 +694,7 @@ public class DroneAgent : Agent
             // metrik Eval/* hanya dari episode start normal, supaya sebanding dengan run sebelumnya
             stats.Add("Eval/Success", success ? 1f : 0f);
             stats.Add("Eval/GatesPassed", gatesPassed);
+            stats.Add("Eval/Laps", lapsCompleted);
             stats.Add("Eval/GateEdgeRejected", rejectedPass);   // lintasan yang ditolak karena menyerempet frame
             if (!float.IsNaN(jerkRms)) stats.Add("Eval/JerkRMS", jerkRms);
             if (!float.IsNaN(meanMargin)) stats.Add("Eval/GateMargin", meanMargin);
@@ -688,13 +723,13 @@ public class DroneAgent : Agent
         {
             string path = Path.Combine(Application.persistentDataPath, csvName);
             if (!File.Exists(path))
-                File.WriteAllText(path, "agent,track,episode,success,reason,lap_time,gate_margin,jerk_rms,gates_passed,hit_object,next_gate,end_dist,end_along,end_dx,end_dy,end_speed,start_gate\n");
+                File.WriteAllText(path, "agent,track,episode,success,reason,lap_time,gate_margin,jerk_rms,gates_passed,hit_object,next_gate,end_dist,end_along,end_dx,end_dy,end_speed,start_gate,laps\n");
             var ci = CultureInfo.InvariantCulture;
             File.AppendAllText(path, string.Format(ci,
-                "{0},{1},{2},{3},{4},{5:F3},{6:F4},{7:F3},{8},{9},{10},{11:F2},{12:F2},{13:F2},{14:F2},{15:F2},{16}\n",
+                "{0},{1},{2},{3},{4},{5:F3},{6:F4},{7:F3},{8},{9},{10},{11:F2},{12:F2},{13:F2},{14:F2},{15:F2},{16},{17}\n",
                 agentTag, track.trackName, episodeCount, success ? 1 : 0, reason,
                 lapTime, meanMargin, jerkRms, absGates, hitObject, track.NextIndex,
-                endDist, endAlong, endDx, endDy, Vel.magnitude, startGate));
+                endDist, endAlong, endDx, endDy, Vel.magnitude, startGate, lapsCompleted));
         }
     }
 

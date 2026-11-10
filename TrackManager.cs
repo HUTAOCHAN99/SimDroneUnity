@@ -16,6 +16,7 @@ public class TrackManager : MonoBehaviour
     public float ceilingMargin = 20f;    // sisa ruang vertikal di atas gerbang tertinggi (m)
 
     public int NextIndex { get; private set; }
+    public int LapsDone { get; private set; }     // jumlah putaran penuh yang sudah selesai pada episode ini (mode multi-lap)
     public int GateCount => gates != null ? gates.Length : 0;
     public float ArenaRadius { get; private set; } = 100f;
     public float ArenaCeiling { get; private set; } = 40f;   // tinggi maksimum relatif TrackArea (m)
@@ -23,7 +24,10 @@ public class TrackManager : MonoBehaviour
     public Transform NextGate => gates[Mathf.Min(NextIndex, gates.Length - 1)];
     public Transform GateAfterNext => gates[(Mathf.Min(NextIndex, gates.Length - 1) + 1) % gates.Length];
     // Titik acuan awal segmen saat ini: Start untuk gerbang pertama, selain itu gerbang sebelumnya.
-    public Transform SegmentStart => (NextIndex <= 0 || NextIndex > gates.Length) ? startPoint : gates[NextIndex - 1];
+    // Pada putaran ke-2 dst, segmen menuju gerbang 0 berawal dari gerbang terakhir (bukan Start).
+    public Transform SegmentStart => NextIndex > gates.Length ? startPoint
+                                   : NextIndex > 0 ? gates[NextIndex - 1]
+                                   : (LapsDone > 0 ? gates[gates.Length - 1] : startPoint);
 
     void Awake() { AssignGateIndices(); }
 
@@ -59,12 +63,15 @@ public class TrackManager : MonoBehaviour
 
     public void ResetTrack()
     {
-        NextIndex = 0;
+        NextIndex = 0; LapsDone = 0;
         AssignGateIndices();   // aman bila lintasan dibangun ulang setelah Awake
         ComputeArena();
     }
 
     public void Advance() { NextIndex++; }
+
+    // Selesai satu putaran dan lanjut: target kembali ke gerbang 0 tanpa mengakhiri episode.
+    public void WrapLap() { NextIndex = 0; LapsDone++; }
 
     // Dipanggil TrackBuilder.LoadTrackByIndex lewat SendMessage (ganti lintasan saat Play).
     void OnTrackRebuilt()
