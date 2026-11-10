@@ -1,8 +1,7 @@
-# ppo_state.yaml -- nilai awal; tuning lewat uji awal
-# Jalankan (contoh):
-#   mlagents-learn config/ppo_state.yaml --run-id=track1_seed1 --seed=1 --time-scale=20
-# lalu tekan Play di Unity Editor (atau pakai --env=build.exe --no-graphics untuk agen state-based).
-# Behavior Name di Behavior Parameters HARUS sama dengan kunci di bawah ("DroneState").
+# ppo_state.yaml -- v3 (setelah diag06)
+# Jalankan: mlagents-learn config\ppo_state.yaml --run-id=diag07 --seed=1
+# Behavior Name di Behavior Parameters HARUS "DroneState".
+# Ganti nama episode_metrics.csv lama sebelum run (kolom CSV bertambah).
 
 behaviors:
   DroneState:
@@ -11,24 +10,26 @@ behaviors:
       batch_size: 2048
       buffer_size: 20480
       learning_rate: 3.0e-4
-      beta: 1.0e-3            # DIUBAH dari 5.0e-3: entropy/std tidak turun di diag01, diag04, diag05
-      epsilon: 0.2            # clipping PPO (nilai awal sesuai Schulman et al., 2017)
+      learning_rate_schedule: constant   # DIUBAH dari linear: LR yang meluruh ke 0 mematikan belajar tepat setelah puncak (~150k)
+      beta: 1.0e-3
+      beta_schedule: constant            # DIUBAH: beta tidak meluruh ke 0
+      epsilon: 0.2
+      epsilon_schedule: constant         # DIUBAH dari linear
       lambd: 0.95
-      num_epoch: 3
-      learning_rate_schedule: linear
+      num_epoch: 5                       # DIUBAH dari 3
     network_settings:
       normalize: true
       hidden_units: 256
       num_layers: 2
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.995                     # DIUBAH dari 0.99: gerbang 0 sekitar 4-5 detik (100+ keputusan) di depan
         strength: 1.0
-    max_steps: 300000       # DIUBAH untuk run diagnosis (run resmi: 3.0e6)
-    time_horizon: 128
+    max_steps: 1500000                   # diag13: lanjut dari diag12 (--initialize-from); run resmi: 3.0e6
+    time_horizon: 256                    # DIUBAH dari 128
     summary_freq: 20000
-    checkpoint_interval: 100000   # DIUBAH untuk run diagnosis (run resmi: 200000)
+    checkpoint_interval: 100000
     keep_checkpoints: 5
 
 torch_settings:
-  device: cpu                 # MX350 (2 GB) tidak membantu untuk MLP kecil; CPU cukup
+  device: cpu
