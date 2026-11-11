@@ -1,0 +1,57 @@
+# ppo_track3_ft.yaml -- fine-tuning Track 3 dari track3_seed1 (2,5M step; success ~94%)
+# Tujuan: memperbaiki tikungan terakhir (G7->G8->G9->G0). 44% kegagalan = menabrak Frame_Right Gate_9.
+# Penyebab utama: random_start_max_gate = 8 sehingga segmen G8->G9 (tikungan paling tajam, 5,8 m / 64 derajat)
+# TIDAK PERNAH dipakai sebagai titik mulai acak. Kode mengizinkan sampai N-1 = 9.
+#
+# Jalankan (Unity Editor sudah di Track 3; ganti nama episode_metrics.csv lama dulu):
+#   mlagents-learn ppo_track3_ft.yaml --run-id=track3_seed1_ft --initialize-from=track3_seed1 --seed=1
+#
+# Perbedaan dari ppo_track3.yaml:
+#   - max_steps 2,5M -> 600k (fine-tuning, bukan dari nol)
+#   - learning_rate 3e-4 -> 1e-4 (agar policy yang sudah bagus tidak rusak)
+#   - random_start_prob 0,3 -> 0,5; min_gate 1 -> 7; max_gate 8 -> 9 (fokus segmen G6->G7 ... G8->G9)
+#   - 50% episode tetap mulai normal dari gerbang 0 sehingga gerbang awal tidak terlupakan
+
+behaviors:
+  DroneState:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 1.0e-4   # DIUBAH dari 3e-4
+      learning_rate_schedule: constant
+      beta: 3.0e-3
+      beta_schedule: constant
+      epsilon: 0.2
+      epsilon_schedule: constant
+      lambd: 0.95
+      num_epoch: 5
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.995
+        strength: 1.0
+    max_steps: 600000                    # DIUBAH: fine-tuning
+    time_horizon: 256
+    summary_freq: 20000
+    checkpoint_interval: 100000
+    keep_checkpoints: 5
+
+torch_settings:
+  device: cpu
+
+environment_parameters:
+  laps_per_episode: 3
+  stall_penalty: 4.0
+  dwell_coef: 0.004
+  dwell_grace: 1.0
+  random_start_prob: 0.5                 # DIUBAH dari 0,3
+  random_start_min_gate: 7               # DIUBAH dari 1
+  random_start_max_gate: 9               # DIUBAH dari 8; 9 = gerbang terakhir (segmen G8->G9)
+  random_start_min_speed: 4.0
+  random_start_max_speed: 20.0           # cek end_speed di CSV Track 3; naikkan bila kecepatan nyata jauh di atas ini
+  random_start_dist: 9.0
+  random_start_exit_prob: 0.6
