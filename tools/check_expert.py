@@ -10,16 +10,18 @@ Contoh (build, TANPA --no-graphics):
 Hasil: baca episode_metrics (csvName) dari persistentDataPath, hitung success.
 """
 import argparse
-import logging
 
 import numpy as np
 import onnxruntime as ort
+from mlagents_envs import logging_util
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.base_env import ActionTuple
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
 
-logging.basicConfig(level=logging.INFO)   # agar 'Listening on port 5004' terlihat
+# Matikan spam "Unknown side channel data received" (channel statistik ML-Agents).
+# Spam ini memperlambat loop dan membuat gerak terlihat patah.
+logging_util.set_log_level(logging_util.ERROR)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--onnx", required=True)
@@ -30,18 +32,23 @@ ap.add_argument("--laps", type=float, default=3.0)
 ap.add_argument("--time_scale", type=float, default=10.0)
 ap.add_argument("--stochastic", action="store_true",
                 help="pakai continuous_actions (bukan deterministic_continuous_actions)")
+ap.add_argument("--no_graphics", action="store_true",
+                help="hanya untuk build + expert state-based (lebih cepat). "
+                     "JANGAN dipakai untuk student vision.")
 args = ap.parse_args()
 
 sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
 in_name = sess.get_inputs()[0].name                  # obs_0
 act_out = "continuous_actions" if args.stochastic else "deterministic_continuous_actions"
 print("Output aksi:", act_out)
+if args.env is None:
+    print("Menunggu Unity... tekan Play di Editor (maks. 120 detik).")
 
 eng = EngineConfigurationChannel()
 par = EnvironmentParametersChannel()
 extra = ["-track", str(args.track)] if args.env else []
 env = UnityEnvironment(file_name=args.env, side_channels=[eng, par],
-                       additional_args=extra, timeout_wait=120, no_graphics=False)
+                       additional_args=extra, timeout_wait=120, no_graphics=bool(args.no_graphics and args.env))
 eng.set_configuration_parameters(time_scale=args.time_scale)
 par.set_float_parameter("laps_per_episode", args.laps)
 par.set_float_parameter("random_start_prob", 0.0)    # evaluasi: selalu start normal
@@ -66,7 +73,7 @@ try:
             env.set_actions(name, ActionTuple(continuous=act))
         env.step()
         if len(ts) > 0:
-            print(f"episode selesai: {done}/{args.episodes}", end="\r")
+            print(f"episode selesai: {done}/{args.episodes}", end="\r", flush=True)
 finally:
     env.close()
 
