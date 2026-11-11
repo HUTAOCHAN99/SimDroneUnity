@@ -1,0 +1,55 @@
+# ppo_track3.yaml -- dari ppo_track2.yaml (Track 2: success ~99%, 3 lap, 1,5M step)
+# Jalankan (PowerShell, env conda "mlagents", dari folder yang berisi config\):
+#   mlagents-learn config/ppo_track3.yaml --run-id=track3_seed1 --seed=1 --env=.\Build\DroneRL.exe --no-graphics --time-scale=20 --env-args -track 3
+# (--env-args harus paling akhir. Hapus --env/--no-graphics/--time-scale bila training di Editor.)
+# Ganti nama episode_metrics.csv lama dulu agar data Track 2 tidak tercampur.
+# Behavior Name di Behavior Parameters HARUS "DroneState".
+#
+# Perbedaan dari Track 2 (ditandai DIUBAH):
+#   - max_steps 1,5M -> 2,5M (Track 3: 10 gerbang, ketinggian 2,5-8 m, belokan lebih tajam)
+#   - random_start_max_gate 6 -> 8 (10 gerbang; pola Track 2 = jumlah gerbang - 2)
+# Hyperparameter lain sengaja SAMA dengan Track 2 supaya perbandingan antar-track adil.
+
+behaviors:
+  DroneState:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      learning_rate_schedule: constant
+      beta: 3.0e-3
+      beta_schedule: constant
+      epsilon: 0.2
+      epsilon_schedule: constant
+      lambd: 0.95
+      num_epoch: 5
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.995
+        strength: 1.0
+    max_steps: 2500000                   # DIUBAH dari 1500000; Track 2 baru mulai sukses di ~500k, Track 3 lebih sulit
+    time_horizon: 256
+    summary_freq: 20000
+    checkpoint_interval: 100000
+    keep_checkpoints: 5
+
+torch_settings:
+  device: cpu
+
+environment_parameters:
+  laps_per_episode: 3
+  stall_penalty: 4.0
+  dwell_coef: 0.004
+  dwell_grace: 1.0
+  random_start_prob: 0.3
+  random_start_min_gate: 1
+  random_start_max_gate: 8               # DIUBAH dari 6; Track 3 punya 10 gerbang
+  random_start_min_speed: 4.0
+  random_start_max_speed: 20.0           # cek end_speed di CSV Track 3; naikkan bila kecepatan nyata jauh di atas ini
+  random_start_dist: 9.0
+  random_start_exit_prob: 0.6
