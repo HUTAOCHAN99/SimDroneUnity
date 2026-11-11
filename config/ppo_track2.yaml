@@ -1,0 +1,51 @@
+# ppo_state.yaml -- v8 (setelah diag17: success 100%)
+# diag18 (multi-lap): mlagents-learn config\ppo_state.yaml --run-id=diag18 --seed=1 --initialize-from=diag17 --env-args -track 1
+# (hapus --env-args bila training di Editor). Pindahkan episode_metrics.csv lama dulu (kolom bertambah: laps).
+# Behavior Name di Behavior Parameters HARUS "DroneState".
+# Ganti nama episode_metrics.csv lama sebelum run (kolom CSV bertambah).
+
+behaviors:
+  DroneState:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      learning_rate_schedule: constant   # DIUBAH dari linear: LR yang meluruh ke 0 mematikan belajar tepat setelah puncak (~150k)
+      beta: 3.0e-3                       # DIUBAH dari 1e-3 (diag14): entropy diag13 sudah 0,36 dan terus turun, sementara gerbang 3+ belum pernah dikuasai
+      beta_schedule: constant            # DIUBAH: beta tidak meluruh ke 0
+      epsilon: 0.2
+      epsilon_schedule: constant         # DIUBAH dari linear
+      lambd: 0.95
+      num_epoch: 5                       # DIUBAH dari 3
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.995                     # DIUBAH dari 0.99: gerbang 0 sekitar 4-5 detik (100+ keputusan) di depan
+        strength: 1.0
+    max_steps: 1500000                   # diag17; perpanjang bila GatesPassed masih naik
+    time_horizon: 256                    # DIUBAH dari 128
+    summary_freq: 20000
+    checkpoint_interval: 100000
+    keep_checkpoints: 5
+
+torch_settings:
+  device: cpu
+
+# Parameter lingkungan (dibaca DroneAgent v14 tiap episode; menimpa Inspector).
+# diag18: drone terus berputar (3 putaran per episode); start acak dipertahankan agar tidak lupa gerbang tengah.
+environment_parameters:
+  laps_per_episode: 3
+  stall_penalty: 4.0
+  dwell_coef: 0.004
+  dwell_grace: 1.0
+  random_start_prob: 0.3
+  random_start_min_gate: 1
+  random_start_max_gate: 6
+  random_start_min_speed: 4.0
+  random_start_max_speed: 20.0   # kecepatan nyata sekitar 24 m/s saat tiba di gerbang (end_speed diag17)
+  random_start_dist: 9.0
+  random_start_exit_prob: 0.6

@@ -12,6 +12,8 @@
 //  untuk tabrakan dan drag. Semua parameter dinamika HARUS identik untuk agen state dan vision.
 //  Versi thrust + body rate disimpan di DroneAgent_acro_backup.cs.txt (cadangan).
 //
+// Perubahan v15 (persiapan Track 2): (1) spawn kurikulum jarak tidak boleh melewati titik bidik gerbang sebelumnya (dd dibatasi 0,95 x
+//   panjang segmen); (2) field evalLaps: jumlah putaran saat TANPA Python (evaluasi/demo). 0 = tak terbatas (demo), 1 = evaluasi lap time.
 // Perubahan v14 (setelah diag17): diag17 sukses 100% (1000/1000 lap_complete, 9,3 s). Episode berakhir saat putaran selesai, lalu drone
 //   di-reset ke Start. MODE MULTI-LAP: setelah gerbang terakhir, target kembali ke gerbang 0 dan drone terus terbang; episode hanya berakhir
 //   karena tabrakan/stall/missed_gate/keluar arena, atau setelah laps_per_episode putaran (training). Tanpa Python (inference/demo) putaran
@@ -131,6 +133,7 @@ public class DroneAgent : Agent
     public float randomStartLateral = 0.5f;  // jitter kanan/kiri tegak lurus arah segmen (m)
     public float randomStartYawJitter = 15f; // derajat, di sekitar arah menuju gerbang k
     public float randomStartMaxSpeed = 3f;   // m/s, kecepatan awal searah hadap (acak 0..ini)
+    public int evalLaps = 0;                 // tanpa Python: 0 = putaran tak terbatas (demo), 1 = satu putaran (evaluasi lap time), dst.
     public float randomStartMinBehind = 2.5f; // m, jarak minimum di depan bidang gerbang k agar tidak langsung 'missed_gate'
 
     [Header("Visual (kosmetik, tidak mempengaruhi fisika)")]
@@ -225,7 +228,7 @@ public class DroneAgent : Agent
         var ep = Academy.Instance.EnvironmentParameters;
         lapsCompleted = 0;
         // training: laps_per_episode putaran per episode; demo/inference (tanpa Python): tanpa batas sampai menabrak/stall
-        targetLaps = Academy.Instance.IsCommunicatorOn ? Mathf.Max(1, Mathf.RoundToInt(ep.GetWithDefault("laps_per_episode", 1f))) : int.MaxValue;
+        targetLaps = Academy.Instance.IsCommunicatorOn ? Mathf.Max(1, Mathf.RoundToInt(ep.GetWithDefault("laps_per_episode", 1f))) : (evalLaps > 0 ? evalLaps : int.MaxValue);
         effStallPenalty = ep.GetWithDefault("stall_penalty", stallPenalty);
         effDwellCoef = ep.GetWithDefault("dwell_coef", dwellCoef);
         effDwellGrace = ep.GetWithDefault("dwell_grace", dwellGrace);
@@ -256,6 +259,7 @@ public class DroneAgent : Agent
                 // kurikulum terbalik: titik pada garis segmen, rsDist m (acak 1..rsDist) sebelum gerbang k
                 float dd = Mathf.Lerp(Mathf.Min(1.0f, rsDist), rsDist, (float)rng.NextDouble());
                 Vector3 back = a - b; if (back.sqrMagnitude < 1e-4f) back = -gk.forward;
+                dd = Mathf.Min(dd, 0.95f * back.magnitude);        // jangan melewati titik bidik gerbang sebelumnya
                 pos = b + back.normalized * dd;
                 minBehind = Mathf.Min(randomStartMinBehind, 0.6f * dd);
             }
