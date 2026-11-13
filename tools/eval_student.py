@@ -19,7 +19,7 @@ from collections import deque
 
 import numpy as np
 import torch
-import torch.nn as nn
+from student_model import build_student, load_ckpt
 from mlagents_envs import logging_util
 from mlagents_envs.base_env import ActionTuple
 from mlagents_envs.environment import UnityEnvironment
@@ -45,31 +45,15 @@ args = ap.parse_args()
 out_csv = args.out or os.path.join(os.path.dirname(os.path.abspath(args.ckpt)), "eval.csv")
 
 
-# ------------------------------------------------------------------ model (harus sama dengan train_student.py)
-class Student(nn.Module):
-    def __init__(self, in_ch):
-        super().__init__()
-
-        def blk(i, o, k, s):
-            return nn.Sequential(nn.Conv2d(i, o, k, s, k // 2, bias=False), nn.BatchNorm2d(o), nn.ReLU(inplace=True))
-
-        self.conv = nn.Sequential(blk(in_ch, 32, 5, 2), blk(32, 64, 3, 2), blk(64, 128, 3, 2), blk(128, 128, 3, 2),
-                                  nn.AdaptiveAvgPool2d((4, 4)))
-        self.head = nn.Sequential(nn.Flatten(), nn.Linear(128 * 16, 256), nn.ReLU(inplace=True),
-                                  nn.Dropout(0.1), nn.Linear(256, 4), nn.Tanh())
-
-    def forward(self, x):
-        return self.head(self.conv(x))
-
-
-ck = torch.load(args.ckpt, map_location="cpu")
+# ------------------------------------------------------------------ model (satu sumber: student_model.py)
+ck = load_ckpt(args.ckpt)
 cfg = ck["config"]
 K, G, C = cfg["stack"], cfg["stack_gap"], cfg["img_c"]
 H, W = cfg["img_h"], cfg["img_w"]
-model = Student(cfg["in_channels"])
+model = build_student(cfg)
 model.load_state_dict(ck["state_dict"])
 model.eval()
-print(f"Student dimuat: stack={K}, gap={G}, gambar {H}x{W}x{C}")
+print(f"Student CNN+TCN dimuat: H(stack)={K}, gap={G}, gambar {H}x{W}x{C}")
 
 # ------------------------------------------------------------------ env
 if args.env is None:

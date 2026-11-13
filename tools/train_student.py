@@ -1,19 +1,23 @@
-"""train_student.py -- latih CNN student (input gambar kamera) meniru aksi expert (behavior cloning).
+"""train_student.py -- latih student vision-based (CNN per frame + TCN) meniru aksi expert (supervised, loss MSE).
+
+Dipakai dua cara:
+  1) Iterasi 0 DAgger / data awal expert:   python train_student.py --data data\\track3 --out student\\track3_it0
+  2) Iterasi DAgger berikutnya (dipanggil oleh dagger_train.py): data = semua folder iterasi + --init checkpoint lama.
 
 Contoh:
-    python train_student.py --data data\\track3 data\\track3_noise data\\track3_rs --out student\\track3_v1 ^
-        --epochs 30 --stack 3 --stride 2 --export_onnx
+    python train_student.py --data data\\track3 data\\track3_noise --out student\\track3_v2 ^
+        --epochs 30 --stack 8 --stack_gap 2 --export_onnx
 
-Input : folder berisi shard_XXXX.npz dari collect_expert_data.py (bisa beberapa folder).
+Input : folder berisi shard_XXXX.npz (collect_expert_data.py atau dagger_train.py). Bisa beberapa folder.
 Output: <out>\\student.pt, <out>\\student.onnx (bila --export_onnx), <out>\\log.csv, <out>\\config.json
 
 PENTING:
   * Student HANYA melihat gambar. Vektor 'vec' di file TIDAK dipakai sebagai input.
-  * Satu gambar tidak memuat kecepatan/laju yaw. --stack K menumpuk K frame (dengan jarak --stack_gap keputusan)
-    dari episode yang sama sehingga gerak bisa disimpulkan. Frame sebelum awal episode diganti frame pertama.
-  * Loss validasi kecil BUKAN jaminan bisa terbang. Ukur sukses dengan menjalankan student di Unity
-    (loop seperti check_expert.py), karena kesalahan kecil menumpuk saat terbang.
-  * Validasi dipisah per EPISODE (bukan per sampel) agar tidak bocor lewat frame yang mirip.
+  * --stack = H (jumlah frame riwayat) dengan jarak --stack_gap keputusan (25 Hz). Frame sebelum awal episode
+    diganti frame pertama. H memengaruhi performa besar (Xing et al., 2024); catat nilainya di laporan.
+  * Loss = MSE antara aksi student dan aksi expert (Persamaan 2.6 laporan).
+  * Validasi dipisah per EPISODE. Loss validasi kecil BUKAN jaminan bisa terbang; ukur sukses di Unity.
+  * Checkpoint versi lama (CNN frame-stacking tanpa TCN) TIDAK kompatibel dengan versi ini.
 """
 import argparse
 import csv
@@ -23,8 +27,10 @@ import os
 
 import numpy as np
 import torch
-import torch.nn as nn
+import torch.nn as nn  # noqa: F401
 import torch.nn.functional as F
+
+from student_model import build_student, load_ckpt, model_cfg_from_args
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--data", nargs="+", required=True, help="satu atau lebih folder dataset")
@@ -33,11 +39,17 @@ ap.add_argument("--epochs", type=int, default=30)
 ap.add_argument("--batch", type=int, default=128)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--wd", type=float, default=1e-4)
-ap.add_argument("--stack", type=int, default=3, help="jumlah frame ditumpuk (1 = satu gambar)")
+ap.add_argument("--stack", type=int, default=8, help="H = jumlah frame riwayat untuk TCN (1 = satu gambar)")
 ap.add_argument("--stack_gap", type=int, default=2, help="jarak antar frame tumpukan (dalam keputusan, 25 Hz)")
 ap.add_argument("--stride", type=int, default=1, help="ambil tiap N sampel sebagai target (frame berurutan sangat mirip)")
 ap.add_argument("--val_frac", type=float, default=0.1, help="porsi EPISODE untuk validasi")
 ap.add_argument("--no_aug", action="store_true")
+ap.add_argument("--init", default=None, help="checkpoint student.pt untuk warm start (iterasi DAgger berikutnya)")
+ap.add_argument("--emb", type=int, default=128, help="panjang embedding tiap frame (keluaran CNN)")
+ap.add_argument("--tcn_ch", type=int, default=128, help="jumlah kanal TCN")
+ap.add_argument("--tcn_dil", default="1,2,4", help="dilasi tiap blok TCN, dipisah koma")
+ap.add_argument("--tcn_k", type=int, default=3, help="ukuran kernel TCN")
+ap.add_argument("--dropout", type=float, default=0.1)
 ap.add_argument("--export_onnx", action="store_true")
 ap.add_argument("--seed", type=int, default=1)
 ap.add_argument("--device", default="auto", help="auto | cpu | cuda")
@@ -128,24 +140,17 @@ def augment(x):
     return x.clamp(0, 1)
 
 
-# ------------------------------------------------------------------ model
-class Student(nn.Module):
-    def __init__(self, in_ch):
-        super().__init__()
-
-        def blk(i, o, k, s):
-            return nn.Sequential(nn.Conv2d(i, o, k, s, k // 2, bias=False), nn.BatchNorm2d(o), nn.ReLU(inplace=True))
-
-        self.conv = nn.Sequential(blk(in_ch, 32, 5, 2), blk(32, 64, 3, 2), blk(64, 128, 3, 2), blk(128, 128, 3, 2),
-                                  nn.AdaptiveAvgPool2d((4, 4)))
-        self.head = nn.Sequential(nn.Flatten(), nn.Linear(128 * 16, 256), nn.ReLU(inplace=True),
-                                  nn.Dropout(0.1), nn.Linear(256, 4), nn.Tanh())
-
-    def forward(self, x):
-        return self.head(self.conv(x))
-
-
-model = Student(K * C).to(dev)
+# ------------------------------------------------------------------ model (lihat student_model.py)
+cfg = {"stack": K, "stack_gap": G, "img_h": int(H), "img_w": int(W), "img_c": int(C), "in_channels": K * C,
+       "arch": "cnn_tcn", **model_cfg_from_args(args), "args": vars(args)}
+model = build_student(cfg).to(dev)
+if args.init:
+    ck0 = load_ckpt(args.init, map_location=dev)
+    c0 = ck0["config"]
+    for k_ in ("stack", "stack_gap", "img_c", "emb", "tcn_ch", "tcn_dil", "tcn_k"):
+        assert c0.get(k_) == cfg.get(k_), f"--init tidak cocok pada {k_}: {c0.get(k_)} vs {cfg.get(k_)}"
+    model.load_state_dict(ck0["state_dict"])
+    print("Warm start dari:", args.init)
 print("Parameter:", sum(p.numel() for p in model.parameters()))
 opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
 steps_per_epoch = max(1, len(train_idx) // args.batch)
@@ -160,14 +165,12 @@ def evaluate():
         for i in range(0, len(val_idx), 256):
             x, y = get_batch(val_idx[i:i + 256])
             p = model(x)
-            loss_sum += F.smooth_l1_loss(p, y, reduction="sum").item()
+            loss_sum += F.mse_loss(p, y, reduction="sum").item()
             mae += (p - y).abs().sum(0)
             n += len(y)
     return loss_sum / max(1, n * 4), (mae / max(1, n)).cpu().numpy()
 
 
-cfg = {"stack": K, "stack_gap": G, "img_h": int(H), "img_w": int(W), "img_c": int(C), "in_channels": K * C,
-       "args": vars(args)}
 with open(os.path.join(args.out, "config.json"), "w") as f:
     json.dump(cfg, f, indent=2)
 
@@ -184,7 +187,7 @@ for ep in range(1, args.epochs + 1):
         x, y = get_batch(perm[s * args.batch:(s + 1) * args.batch])
         if not args.no_aug:
             x = augment(x)
-        loss = F.smooth_l1_loss(model(x), y)
+        loss = F.mse_loss(model(x), y)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
@@ -209,8 +212,8 @@ logf.close()
 
 # ------------------------------------------------------------------ ekspor ONNX (opsional)
 if args.export_onnx:
-    ck = torch.load(os.path.join(args.out, "student.pt"), map_location="cpu")
-    m = Student(K * C)
+    ck = load_ckpt(os.path.join(args.out, "student.pt"))
+    m = build_student(ck["config"])
     m.load_state_dict(ck["state_dict"])
     m.eval()
     dummy = torch.zeros(1, K * C, H, W)
