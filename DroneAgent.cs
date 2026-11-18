@@ -155,6 +155,8 @@ public class DroneAgent : Agent
     public bool logEpisodeCsv = false;
     public string agentTag = "state";    // "state" atau "vision"
     public string csvName = "episode_metrics.csv";
+    int runSeed = 0;                      // dari argumen -seed (build) atau env parameter "seed"
+    string runId = "";                    // dari argumen -run (opsional), ikut ditulis ke CSV
 
     Rigidbody rb;
     System.Random rng;
@@ -216,6 +218,15 @@ public class DroneAgent : Agent
         ComputeDroneExtents();
         // seed bisa dikirim dari Python lewat EnvironmentParameters ("seed")
         int seed = (int)Academy.Instance.EnvironmentParameters.GetWithDefault("seed", 0f);
+        // argumen build (lewat --env-args / additional_args): -seed N  -csv nama.csv  -run id
+        var cl = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i < cl.Length - 1; i++)
+        {
+            if (cl[i] == "-seed" && int.TryParse(cl[i + 1], out int sa)) seed = sa;
+            if (cl[i] == "-csv") csvName = cl[i + 1];
+            if (cl[i] == "-run") runId = cl[i + 1];
+        }
+        runSeed = seed;
         rng = new System.Random(seed + seedOffset);
     }
 
@@ -725,16 +736,37 @@ public class DroneAgent : Agent
 
         if (logEpisodeCsv)
         {
-            string path = Path.Combine(Application.persistentDataPath, csvName);
+            // Nama CSV otomatis (tidak bergantung Inspector): lihat ResolveCsvName()
+            string path = Path.Combine(Application.persistentDataPath, ResolveCsvName());
             if (!File.Exists(path))
-                File.WriteAllText(path, "agent,track,episode,success,reason,lap_time,gate_margin,jerk_rms,gates_passed,hit_object,next_gate,end_dist,end_along,end_dx,end_dy,end_speed,start_gate,laps\n");
+                File.WriteAllText(path, "agent,track,episode,success,reason,lap_time,gate_margin,jerk_rms,gates_passed,hit_object,next_gate,end_dist,end_along,end_dx,end_dy,end_speed,start_gate,laps,seed,run_id\n");
             var ci = CultureInfo.InvariantCulture;
             File.AppendAllText(path, string.Format(ci,
-                "{0},{1},{2},{3},{4},{5:F3},{6:F4},{7:F3},{8},{9},{10},{11:F2},{12:F2},{13:F2},{14:F2},{15:F2},{16},{17}\n",
+                "{0},{1},{2},{3},{4},{5:F3},{6:F4},{7:F3},{8},{9},{10},{11:F2},{12:F2},{13:F2},{14:F2},{15:F2},{16},{17},{18},{19}\n",
                 agentTag, track.trackName, episodeCount, success ? 1 : 0, reason,
                 lapTime, meanMargin, jerkRms, absGates, hitObject, track.NextIndex,
-                endDist, endAlong, endDx, endDy, Vel.magnitude, startGate, lapsCompleted));
+                endDist, endAlong, endDx, endDy, Vel.magnitude, startGate, lapsCompleted, ResolveSeed(), runId));
         }
+    }
+
+    string sessionStamp = null;
+    // Prioritas nama: (1) argumen build -csv, (2) env parameter csv_track + csv_seed dari eval_ppo.py
+    // -> episode_metrics_track{T}_seed{S}.csv, (3) bila csvName di Inspector diubah, pakai itu,
+    // (4) default: episode_metrics_{namaLintasan}_{waktuPlay}.csv (unik per sesi Play, tidak bercampur).
+    string ResolveCsvName()
+    {
+        if (csvName != "episode_metrics.csv") return csvName;
+        var ep = Academy.Instance.EnvironmentParameters;
+        float ct = ep.GetWithDefault("csv_track", 0f), cs = ep.GetWithDefault("csv_seed", -1f);
+        if (ct > 0f && cs >= 0f) return $"episode_metrics_track{(int)ct}_seed{(int)cs}.csv";
+        if (sessionStamp == null) sessionStamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        return $"episode_metrics_{track.trackName}_{sessionStamp}.csv";
+    }
+
+    int ResolveSeed()
+    {
+        float cs = Academy.Instance.EnvironmentParameters.GetWithDefault("csv_seed", -1f);
+        return cs >= 0f ? (int)cs : runSeed;
     }
 
     // Uji manual. Aksi nol = hover. Butuh Active Input Handling = Both/Legacy.
