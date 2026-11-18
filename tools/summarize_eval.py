@@ -3,7 +3,8 @@
 Pemakaian:  python summarize_eval.py hasil_eval\\ppo            (folder berisi episode_metrics_track{T}_seed{S}.csv)
             python summarize_eval.py a.csv b.csv               (file tertentu)
 Nama file WAJIB memuat track{T} dan seed{S} (kolom seed di CSV Editor selalu 0, jadi tidak dipakai).
-Menangani header campuran (18 -> 20 kolom). Filter: laps==1, start_gate==0, 50 episode pertama.
+Menangani header campuran (18 -> 20 kolom). Filter: laps in {0,1}, start_gate==0, 50 episode pertama (laps=0 = episode gagal, TIDAK boleh dibuang).
+SR dihitung dari SEMUA baris; lap_time/gate_margin/jerk hanya dari episode sukses.
 Keluaran: per_seed.csv (satu baris per lintasan x seed = unit analisis) dan ringkasan antar seed.
 """
 import sys, re, glob, os
@@ -31,20 +32,24 @@ for p in files:
     t, s = int(m[1]), int(m[2])
     d = read(p)
     n0 = len(d)
-    d = d[(d.laps == 1) & (d.start_gate == 0)].head(50)
+    d = d[d.laps.isin([0, 1]) & (d.start_gate == 0)].head(50)
     ok = d[d.success == 1]
     warn = []
     if len(d) != 50: warn.append(f"n={len(d)} (bukan 50)")
     if n0 != len(d): warn.append(f"{n0-len(d)} baris disaring")
     if d.track.nunique() > 1 or (len(d) and d.track.iloc[0] != f"Track{t}"): warn.append("kolom track tidak cocok nama file")
-    out.append(dict(track=t, seed=s, n=len(d), SR=d.success.mean()*100,
-                    lap_time=ok.lap_time.mean(), gate_margin=d.gate_margin.mean(), jerk_rms=d.jerk_rms.mean(),
-                    gagal=d[d.success == 0].reason.value_counts().to_dict(), catatan="; ".join(warn)))
+    gagal = {f"{k[0]}@{int(k[1])}": int(v) for k, v in
+             d[d.success != 1].groupby(["reason", "gates_passed"]).size().items()}
+    out.append(dict(track=t, seed=s, n=len(d), SR=(d.success == 1).mean()*100,
+                    lap_time=ok.lap_time.mean(), gate_margin=ok.gate_margin.mean(), jerk_rms=ok.jerk_rms.mean(),
+                    gagal=gagal, catatan="; ".join(warn)))
 r = pd.DataFrame(out).sort_values(["track", "seed"])
 pd.set_option("display.width", 200)
 print(r.round(3).to_string(index=False))
 r.drop(columns=["gagal"]).to_csv("per_seed.csv", index=False)
-print("\nAntar seed (unit = seed):")
+print("\nAntar seed (unit = seed). SR dari SEMUA seed; metrik kontinu hanya dari seed sukses:")
 for t, g in r.groupby("track"):
-    print(f"Track {t}: seed ada {len(g)}/3 | " + " | ".join(
-        f"{c} {g[c].mean():.3f} ±{g[c].std(ddof=1) if len(g)>1 else float('nan'):.3f}" for c in ["SR","lap_time","gate_margin","jerk_rms"]))
+    sukses = g[g.SR > 0]
+    sd = lambda x: x.std(ddof=1) if len(x) > 1 else float("nan")
+    cont = " | ".join(f"{c} {sukses[c].mean():.3f} ±{sd(sukses[c]):.3f}" for c in ["lap_time", "gate_margin", "jerk_rms"])
+    print(f"Track {t}: seed {len(g)}/3, sukses {len(sukses)}/3 | SR {g.SR.mean():.1f} ±{sd(g.SR):.1f} | {cont} (n_seed_sukses={len(sukses)})")
