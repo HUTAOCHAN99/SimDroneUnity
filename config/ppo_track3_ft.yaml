@@ -34,7 +34,7 @@ behaviors:
       extrinsic:
         gamma: 0.995
         strength: 1.0
-    max_steps: 200000                    # DIUBAH: fine-tuning
+    max_steps: 600000                    # DIUBAH: fine-tuning
     time_horizon: 256
     summary_freq: 20000
     checkpoint_interval: 100000
