@@ -59,7 +59,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--onnx", required=True, help="expert state-based (DroneState.onnx) untuk lintasan dan seed ini")
 ap.add_argument("--work", required=True, help="folder kerja")
 ap.add_argument("--env", default=None, help="path build; kosong = Unity Editor")
-ap.add_argument("--track", type=int, default=3, help="hanya berlaku untuk build")
+ap.add_argument("--track", type=int, default=3, help="lintasan 1-3 (build: argumen -track; Editor: environment parameter track)")
 ap.add_argument("--iters", type=int, default=5, help="jumlah iterasi DAgger (di luar iterasi 0)")
 ap.add_argument("--episodes0", type=int, default=50, help="episode expert untuk iterasi 0")
 ap.add_argument("--episodes", type=int, default=30, help="episode rollout per iterasi DAgger")
@@ -107,7 +107,8 @@ def run(cmd):
 
 
 def env_flags():
-    return ["--env", args.env, "--track", str(args.track)] if args.env else []
+    f = ["--track", str(args.track)]          # selalu diteruskan (Editor juga)
+    return (["--env", args.env] + f) if args.env else f
 
 
 def has_shards(d):
@@ -167,6 +168,7 @@ def rollout(ckpt, it, beta, out_dir):
     eng.set_configuration_parameters(time_scale=args.time_scale)
     par.set_float_parameter("laps_per_episode", args.laps)
     par.set_float_parameter("random_start_prob", args.random_start_prob)
+    par.set_float_parameter("track", float(args.track))
     env.reset()
     name = list(env.behavior_specs)[0]
     spec = env.behavior_specs[name]

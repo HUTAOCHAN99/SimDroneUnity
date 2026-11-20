@@ -46,7 +46,7 @@ logging_util.set_log_level(logging_util.ERROR)
 ap = argparse.ArgumentParser()
 ap.add_argument("--onnx", required=True, help="expert state-based (DroneState.onnx)")
 ap.add_argument("--env", default=None, help="path build; kosong = Unity Editor")
-ap.add_argument("--track", type=int, default=3, help="hanya berlaku untuk build")
+ap.add_argument("--track", type=int, default=3, help="lintasan 1-3 (build: argumen -track; Editor: environment parameter track)")
 ap.add_argument("--episodes", type=int, default=50)
 ap.add_argument("--laps", type=float, default=3.0)
 ap.add_argument("--time_scale", type=float, default=3.0)
@@ -80,6 +80,7 @@ env = UnityEnvironment(file_name=args.env, side_channels=[eng, par], additional_
 eng.set_configuration_parameters(time_scale=args.time_scale)
 par.set_float_parameter("laps_per_episode", args.laps)
 par.set_float_parameter("random_start_prob", args.random_start_prob)
+par.set_float_parameter("track", float(args.track))
 env.reset()
 
 name = list(env.behavior_specs)[0]

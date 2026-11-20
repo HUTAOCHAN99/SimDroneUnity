@@ -7,6 +7,7 @@ public class TrackBuilder : MonoBehaviour
 {
     public TrackConfig[] availableTracks;   // isi Track1, Track2, Track3
     public int defaultTrackIndex = 0;
+    public int activeTrackIndex { get; private set; }   // lintasan yang benar-benar sedang dibangun (0-based)
     public GameObject gatePrefab;
     public Transform startPoint;            // objek Start yang sudah ada
     public TrackManager trackManager;       // ASUMSI: punya field gates, startPoint, startRange, trackName
@@ -50,7 +51,21 @@ public class TrackBuilder : MonoBehaviour
                                System.Globalization.CultureInfo.InvariantCulture, out float L) && L > 0f)
                 targetLength = L;
         }
-        BuildTrack(availableTracks[Mathf.Clamp(idx, 0, availableTracks.Length - 1)]);
+        idx = Mathf.Clamp(idx, 0, availableTracks.Length - 1);
+        activeTrackIndex = idx;
+        Debug.Log($"[TrackBuilder] args=\"{string.Join(" ", args)}\" -> Track {idx + 1}");
+        BuildTrack(availableTracks[idx]);
+    }
+
+    // Ganti lintasan tanpa EndEpisode (aman dipanggil dari DroneAgent.OnEpisodeBegin).
+    // Dipakai Python lewat environment parameter "track" (1-based) -> berlaku di Editor maupun build.
+    public void SetTrackIndex(int index)
+    {
+        index = Mathf.Clamp(index, 0, availableTracks.Length - 1);
+        if (index == activeTrackIndex && spawned.Count > 0) return;   // sudah benar
+        activeTrackIndex = index;
+        BuildTrack(availableTracks[index]);
+        Debug.Log($"[TrackBuilder] Lintasan diganti ke Track {index + 1}");
     }
 
     // Posisi X dan Z dikali trackScale; Y (tinggi gerbang) tetap.
@@ -145,6 +160,7 @@ public class TrackBuilder : MonoBehaviour
     // Setelah ganti, reset episode drone dan reindex gerbang (lihat catatan).
     public void LoadTrackByIndex(int index)
     {
+        activeTrackIndex = index;
         BuildTrack(availableTracks[index]);
         trackManager.SendMessage("OnTrackRebuilt", SendMessageOptions.DontRequireReceiver);
     }

@@ -98,7 +98,7 @@ eng = EngineConfigurationChannel()
 par = EnvironmentParametersChannel()
 extra = ["-track", str(args.track), "-seed", str(args.seed), "-csv", csv_name, "-run", tag] if args.env else []
 if args.env is None:
-    print("Mode Editor: pastikan scene di Track", args.track, "| Inspector: csvName =", csv_name,
+    print("Mode Editor: lintasan dipilih lewat parameter track =", args.track, "| Inspector: csvName =", csv_name,
           "| agentTag = vision | logEpisodeCsv = true")
     print("Menunggu Unity... tekan Play di Editor (maks. 120 detik).")
 env = UnityEnvironment(file_name=args.env, side_channels=[eng, par], additional_args=extra,
@@ -106,6 +106,7 @@ env = UnityEnvironment(file_name=args.env, side_channels=[eng, par], additional_
 eng.set_configuration_parameters(time_scale=args.time_scale)
 par.set_float_parameter("laps_per_episode", args.laps)
 par.set_float_parameter("random_start_prob", 0.0)
+par.set_float_parameter("track", float(args.track))
 if args.env:  # build: nama CSV sudah ditentukan -csv; kolom seed diisi dari csv_seed. Editor: jangan kirim (lihat docstring)
     par.set_float_parameter("csv_track", float(args.track))
     par.set_float_parameter("csv_seed", float(args.seed))

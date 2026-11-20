@@ -234,6 +234,15 @@ public class DroneAgent : Agent
     {
         if (pendingLog) LogEpisode(false, "timeout");   // berakhir karena MaxStep
 
+        // Pilih lintasan dari Python (environment parameter "track", 1-based); 0/tidak ada = pakai lintasan yang sudah dibangun
+        float trackParam = Academy.Instance.EnvironmentParameters.GetWithDefault("track", 0f);
+        if (trackParam >= 1f)
+        {
+            var tbSel = track.GetComponent<TrackBuilder>();
+            if (tbSel == null) tbSel = track.GetComponentInParent<TrackBuilder>();
+            if (tbSel != null) tbSel.SetTrackIndex(Mathf.RoundToInt(trackParam) - 1);
+        }
+
         track.ResetTrack();
         startGate = 0;
         var ep = Academy.Instance.EnvironmentParameters;

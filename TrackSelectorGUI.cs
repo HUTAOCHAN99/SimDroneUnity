@@ -15,7 +15,7 @@ public class TrackSelectorGUI : MonoBehaviour
     void Start()
     {
         if (trackBuilder == null) trackBuilder = GetComponent<TrackBuilder>();
-        current = trackBuilder != null ? trackBuilder.defaultTrackIndex : 0;
+        current = trackBuilder != null ? trackBuilder.activeTrackIndex : 0;
     }
 
     void OnGUI()

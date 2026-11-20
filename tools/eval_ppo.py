@@ -44,13 +44,14 @@ eng = EngineConfigurationChannel(); par = EnvironmentParametersChannel()
 # Build: argumen lewat additional_args. Editor: tidak ada argumen; lintasan, csvName, agentTag diatur di scene/Inspector.
 extra = ["-track", str(args.track), "-seed", str(args.seed), "-csv", f"{tag}.csv", "-run", tag] if args.env else []
 if args.env is None:
-    print("Mode Editor: pastikan scene sudah di Track", args.track, "- CSV otomatis bernama", f"{tag}.csv")
+    print("Mode Editor: lintasan dipilih lewat parameter track =", args.track, "- CSV otomatis bernama", f"{tag}.csv")
     print("Menunggu Unity... tekan Play di Editor (maks. 120 detik).")
 env = UnityEnvironment(file_name=args.env, side_channels=[eng, par], additional_args=extra,
                        seed=args.seed, timeout_wait=120, no_graphics=False)
 eng.set_configuration_parameters(time_scale=args.time_scale)
 par.set_float_parameter("laps_per_episode", args.laps)
 par.set_float_parameter("random_start_prob", 0.0)
+par.set_float_parameter("track", float(args.track))
 # Nama CSV & kolom seed ditentukan C# dari dua parameter ini -> episode_metrics_track{T}_seed{S}.csv (tanpa Inspector)
 par.set_float_parameter("csv_track", float(args.track))
 par.set_float_parameter("csv_seed", float(args.seed))
