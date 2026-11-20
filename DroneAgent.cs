@@ -328,6 +328,28 @@ public class DroneAgent : Agent
                       $"gateBonus={gateBonus}, centerBonus={centerBonus}, lapBonus={lapBonus}, crashPenalty={crashPenalty}, stallPenalty={stallPenalty}, " +
                       $"stall={stallSeconds}s/{stallMinProgress}m, stallPenalty(eff)={effStallPenalty}, dwell(eff)={effDwellCoef}/{effDwellGrace}s,  smoothCoef={smoothCoef}, timePenalty={timePenalty}, axisPenalty={axisPenalty}, " +
                       $"axisRange={axisRange}, lateralWeight={lateralWeight}, aimBeyond={aimBeyond}, missedGatePlane={missedGatePlane}, exitClearance={exitClearance}");
+            // ===== LOG TAMBAHAN untuk Bab III (Tabel 3.1, 3.2, 3.2.2): nilai efektif dinamika, Rigidbody, skala lintasan, kamera =====
+#if UNITY_6000_0_OR_NEWER
+            float rbDrag = rb.linearDamping;
+#else
+            float rbDrag = rb.drag;
+#endif
+            Debug.Log($"[DroneAgent] DINAMIKA EFEKTIF: maxSpeed={maxSpeed}, maxVerticalSpeed={maxVerticalSpeed}, maxYawRate={maxYawRate}, " +
+                      $"maxAccel={maxAccel}, velocityTau={velocityTau}, linearDrag={linearDrag}; " +
+                      $"Rigidbody mass={rb.mass}, drag={rbDrag}, useGravity={rb.useGravity}, constraints={rb.constraints}; " +
+                      $"fixedDeltaTime={Time.fixedDeltaTime}, decisionPeriod={GetComponent<DecisionRequester>().DecisionPeriod}");
+            var tb = track != null ? track.GetComponent<TrackBuilder>() : null;
+            if (tb == null && track != null) tb = track.GetComponentInParent<TrackBuilder>();
+            if (tb != null)
+                Debug.Log($"[DroneAgent] LINTASAN: trackScale={tb.trackScale}, targetLength={tb.targetLength}, currentLength (Start->semua gerbang->Start, setelah skala)={tb.currentLength:F1} m, jumlah gerbang={track.GateCount}");
+            else
+                Debug.Log("[DroneAgent] LINTASAN: komponen TrackBuilder tidak ditemukan pada objek TrackManager (cek trackScale manual di Inspector).");
+            var cam = GetComponentInChildren<Camera>(true);
+            if (cam != null)
+                Debug.Log($"[DroneAgent] KAMERA '{cam.name}': FOV={cam.fieldOfView} derajat (vertikal), posisi lokal={cam.transform.localPosition}, rotasi lokal={cam.transform.localEulerAngles}, near={cam.nearClipPlane}, far={cam.farClipPlane}");
+            else
+                Debug.Log("[DroneAgent] KAMERA: tidak ada Camera di bawah objek drone.");
+            // ===== akhir log tambahan =====
             Debug.Log($"[DroneAgent] radius drone H={droneRadiusH:F2} m, V={droneRadiusV:F2} m; " +
                       $"jarak Start ke gerbang 0 = {(track.NextGate.position - track.startPoint.position).magnitude:F1} m");
         }
