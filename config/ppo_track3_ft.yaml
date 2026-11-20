@@ -1,6 +1,6 @@
 # ppo_track3_ft.yaml -- fine-tuning Track 3 dari track3_seed1 (2,5M step; success ~94%)
 # Tujuan: memperbaiki tikungan terakhir (G7->G8->G9->G0). 44% kegagalan = menabrak Frame_Right Gate_9.
-# Penyebab utama: random_start_max_gate = 8 sehingga segmen G8->G9 (tikungan paling tajam, 5,8 m / 64 derajat)
+# Penyebab utama: random_start_max_gate = 8 sehingga segmen G8->G9 (segmen terpendek, 17,5 m, selisih arah hadap gerbang sekitar 64 derajat)
 # TIDAK PERNAH dipakai sebagai titik mulai acak. Kode mengizinkan sampai N-1 = 9.
 #
 # Jalankan (Unity Editor sudah di Track 3; ganti nama episode_metrics.csv lama dulu):
