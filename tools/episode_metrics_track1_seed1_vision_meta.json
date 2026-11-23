@@ -1,0 +1,23 @@
+{
+  "tag": "episode_metrics_track1_seed1_vision",
+  "ckpt": "E:\\IF\\SEM6\\Metodologi Penelitian\\TA-Start\\project_drone\\drone_project_TA\\Assets\\Scripts\\tools\\dagger\\track1_seed1\\student_iter03\\student.pt",
+  "onnx": "E:\\IF\\SEM6\\Metodologi Penelitian\\TA-Start\\project_drone\\drone_project_TA\\Assets\\Scripts\\tools\\dagger\\track1_seed1\\student_iter03\\student.onnx",
+  "stack_H": 8,
+  "stack_gap": 2,
+  "image": [
+    96,
+    96,
+    3
+  ],
+  "onnxruntime": "1.23.2",
+  "providers": [
+    "CPUExecutionProvider"
+  ],
+  "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "python": "3.10.12",
+  "laps": 1.0,
+  "time_scale": 10.0,
+  "episodes": 50,
+  "warmup": 100
+}
